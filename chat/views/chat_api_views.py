@@ -8,7 +8,12 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from chat.dtos import ChatRequest
-from chat.utilities import generate_reply, stream_reply, check_rate_limit
+from chat.utilities.llms import LLMService
+from chat.utilities import check_rate_limit
+
+# # Create a single instance of the LLMService to be used across requests
+# # This reuses the underlying AsyncOpenAI client, saving resources.
+# llm_service = LLMService()
 
 
 class ChatAPIView(APIView):
@@ -18,6 +23,31 @@ class ChatAPIView(APIView):
     """
     authentication_classes = []
     permission_classes = []
+
+    def __init__(self, **kwargs):
+        """
+        Initialize the view and create an instance of LLMService.
+        Lazy loading is used here to ensure Django settings are loaded before the client is created.
+        """
+        super().__init__(**kwargs)
+        self.llm_service = LLMService()
+
+    def generate_post_response(self, chat_request: ChatRequest):
+        """
+        By default, generates a Non-Streaming Response Format.
+        - It waits for the complete response to arrive.
+        - Once finished, it sends it all at once in JSON format.
+        """
+        try:
+            reply = async_to_sync(self.llm_service.generate_reply)(
+                chat_request.message, chat_request.history, chat_request.use_fast
+            )
+            return Response({"reply": reply})
+        except Exception as e:
+            return Response(
+                {"detail": f"{type(e).__name__}: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     def post(self, request):
         """
@@ -34,27 +64,7 @@ class ChatAPIView(APIView):
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Calls the specific response generator (overridden by child class)
         return self.generate_post_response(req)
-
-    def generate_post_response(self, chat_request: ChatRequest):
-        """
-        By default, generates a Non-Streaming Response Format.
-        - It waits for the complete response to arrive.
-        - Once finished, it sends it all at once in JSON format.
-        - Usage: Background tasks (e.g., generating an email).
-        - Response: {"reply": "Hello, how can I help you today?"}
-        """
-        try:
-            reply = async_to_sync(generate_reply)(
-                chat_request.message, chat_request.history, chat_request.use_fast
-            )
-            return Response({"reply": reply})
-        except Exception as e:
-            return Response(
-                {"detail": f"{type(e).__name__}: {e}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
     def _client_ip(self, request) -> str:
         """Extracts the real client IP, considering proxies."""
@@ -83,23 +93,16 @@ class ChatStreamAPIView(ChatAPIView):
     authentication_classes = []
     permission_classes = []
 
-    def generate_post_response(self, chat_request):
+    def generate_post_response(self, chat_request: ChatRequest):
         """
         Streaming Response Format
         - It does NOT wait for the full response.
         - As soon as the AI generates a token, it sends it immediately (SSE).
-        - Response:
-                data: {"delta": "Hello"}
-                data: {"delta": ", how"}
-                data: [DONE]
-        - Usage: Chat UI where live typing is shown to the user.
         """
-
         async def event_gen():
             try:
-                # Iterate over the async generator from utilities/llm.py
-                async for delta in stream_reply(
-                        chat_request.message, chat_request.history, chat_request.use_fast
+                async for delta in self.llm_service.stream_reply(
+                    chat_request.message, chat_request.history, chat_request.use_fast
                 ):
                     payload = json.dumps({"delta": delta})
                     yield f"data: {payload}\n\n".encode()
@@ -113,8 +116,6 @@ class ChatStreamAPIView(ChatAPIView):
         )
         resp["Cache-Control"] = "no-cache"
         resp["X-Accel-Buffering"] = "no"
-
-        # Note: 'Connection: keep-alive' is not allowed in WSGI (Django runserver),
-        # but is handled automatically by ASGI (Uvicorn). If you get an error, remove this line.
+        # Note: Remove 'Connection: keep-alive' if running on WSGI (Django's runserver)
         resp["Connection"] = "keep-alive"
         return resp
