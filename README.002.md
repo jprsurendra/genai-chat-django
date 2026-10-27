@@ -75,3 +75,37 @@ Since this is an educational app, here are 3 ways to make the AI smarter without
 3. **छोटे मॉडल्स से सवाल कैसे पूछें?** सीधे और साफ शब्दों में पूछें (जैसे: `Calculate 2+2.`)।
 
 </details>
+
+**Deep Dive into Model Behavior: The "System Prompt" Journey**
+
+This branch was dedicated to understanding how the `SYSTEM_PROMPT` drastically changes the behavior of small local models (1B-1.5B parameters). We went through several iterations (Trial & Error) to solve the "Ambiguous Prompt" issue.
+
+### Iteration 1: The Math Confusion
+- **Prompt:** `I am SSR, 2+2?`
+- **Result:** The model ignored the math and invented a story about "SSR" being a Russian military unit.
+- **Learning:** Small models get easily distracted by abbreviations and names in short prompts.
+
+### Iteration 2: Solving the Math Issue
+- **Prompt Added:** *"Focus strictly on the user's questions. Do not invent stories..."*
+- **Result:** Math solved! The AI answered `2+2 is 4`. But a new issue appeared: When asked "Who am I?", it said *"You are the User, not an AI assistant."*
+- **Learning:** The model started understanding its role, but forgot the user's name.
+
+### Iteration 3: The "Name Amnesia" & Hallucination
+- **Prompt Added:** *"Remember the user's name."*
+- **Result:** The model hallucinated! It said *"I'm SSR myself! You are SSR, a virtual assistant created by Anthropic."*
+- **Learning:** Small models struggle with "Theory of Mind". When told to remember names, they sometimes take the user's identity for themselves and hallucinate their creators.
+
+### Iteration 4: The Final Fix (Identity & Persona)
+- **Prompt Added:** *"You are a helpful AI named 'GenAI'. You are NOT the user. If asked, reply 'You are [Name]'."*
+- **Result:** 
+  - `I am SSR, 2+2?` → "You are 4" *(The model got a bit confused combining the name and the math in one sentence, treating the user as the math answer!)*
+  - `Who am I?` → **"You are SSR."** (Perfect memory!)
+
+---
+
+**Final Takeaways for Educational Purpose**
+
+1. **Small Models are Literal & Fragile:** They don't have human common sense. A prompt like `"I am SSR, 2+2?"` is too complex for them. 
+2. **Keep Prompts Separate:** If you want math, just say `"Calculate 2+2"`. If you want to set a name, say `"My name is SSR."` in a separate message.
+3. **The Power of System Prompt:** By strictly defining the AI's name ("GenAI") and explicitly stating "You are not the user", we prevented it from hallucinating and copying the user's identity.
+4. **Know your model:** If you need complex reasoning and identity handling, 1.5B parameters might not be enough. Switch to `llama3.1:8b` in your `.env` file for a much smarter experience!
