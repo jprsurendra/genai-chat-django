@@ -237,19 +237,34 @@ Open in browser:
 
 ---
 
-```bash
-Important Error: 
-    AssertionError: Hop-by-hop header, 'Connection: keep-alive', not allowed
-    [27/Oct/2026 06:21:29] "POST /api/chat/stream HTTP/1.1" 500 59
+### ⚠️ Common Error: `Hop-by-hop header` (500 on `/api/chat/stream`)
 
-Root Cause:
-    You are running the server using WSGI (Django's default `runserver`) instead of ASGI (Uvicorn).
-    Django's WSGI server (which utilizes `wsgiref`) does not permit the setting of certain headers, known as "hop-by-hop" headers. `Connection: keep-alive` is one such header. When our `ChatStreamAPIView` attempted to send this header for streaming purposes, the WSGI server rejected it, resulting in a 500 Internal Server Error.
-    
-    We decided right from the start that we would use Uvicorn for streaming (SSE). Please stop your server (Ctrl + C) and run it again using Uvicorn:
-    uvicorn config.asgi:application --reload --port 8000
+If you see this in the terminal:
+
+```text
+AssertionError: Hop-by-hop header, 'Connection: keep-alive', not allowed
+[27/Oct/2026 06:21:29] "POST /api/chat/stream HTTP/1.1" 500 59
 ```
 
+**Root cause**
+
+You are running the server with **WSGI** (Django's default `runserver`) instead of **ASGI** (Uvicorn).
+
+- Django's WSGI server (built on `wsgiref`) does not allow *hop-by-hop* headers such as `Connection: keep-alive`.
+- `ChatStreamAPIView` sets this header for SSE streaming, so the WSGI server rejects it and returns a `500 Internal Server Error`.
+
+**Fix**
+
+1. Stop the server with `Ctrl + C`.
+2. Start it again using Uvicorn:
+
+```bash
+uvicorn config.asgi:application --reload --port 8000
+```
+
+> 💡 This project uses Uvicorn for streaming (SSE) by design — never use `python manage.py runserver` for this app.
+
+---
 
 ## 7. VS Code Debugging (launch.json)
 
@@ -407,6 +422,7 @@ data: [DONE]
 | First call takes 10–20 s | Model cold start on CPU | Normal; subsequent calls are fast |
 | `429 Too Many Requests` | Rate limit hit during tests | Restart Uvicorn or bump `RATE_LIMIT` |
 | Streaming appears all at once | Using WSGI instead of ASGI | Must run `uvicorn config.asgi:application` |
+| `AssertionError: Hop-by-hop header` (500 on `/api/chat/stream`) | Server started with `runserver` (WSGI) | Stop it and run `uvicorn config.asgi:application --reload --port 8000` (see [Section 6](#6-running-the-app)) |
 
 ---
 
@@ -432,4 +448,3 @@ MIT — use it, fork it, ship it. No warranty.
 ---
 
 *Last verified: Ubuntu 26.04.1 · Python 3.14.4 · Django 5.x · openai 3.x · pydantic 2.14.x · Ollama (llama3.2:1b + qwen2.5:1.5b)*
-# genai-chat-django
