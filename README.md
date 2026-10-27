@@ -449,11 +449,97 @@ Each branch builds on the previous one. This section records **what changed in e
 | Branch | Status | Summary |
 |--------|--------|---------|
 | `genai-chat-001-basic` | ✅ Done | Basic streaming chatbot (Django + DRF + Ollama) |
-
+| `genai-chat-002-system-prompt` | 🚧 In progress | Investigate and improve the system prompt |
 
 ---
 
-### Branch: `genai-chat-001-basic` ✅
+### Branching Strategy & Git Workflow
+
+We follow a simple **GitHub Flow**: `main` is always stable, and each feature lives in a short-lived branch that is created from the **latest `main`**. A new branch is created only after the previous one has been merged.
+
+```text
+main ──●──────────────●──────────────────●──────▶
+        \            / \                /
+         001-basic ─●   002-system-prompt
+        (PR + CI ✅)    (PR + CI ✅)
+          tag: v0.1.0     tag: v0.2.0
+```
+
+**Why not stack branches (002 created from 001)?**
+Stacked branches carry the parent's commits, which causes duplicate commits and conflicts after a squash merge, and makes PR diffs noisy.
+
+**Rules**
+
+- `main` is protected: no direct pushes, merge only through a Pull Request with passing CI.
+- One topic per branch, named `genai-chat-00X-short-name`.
+- Always branch from an up-to-date `main`.
+- Tag each merged stage (`v0.1.0`, `v0.2.0`, ...) so any stage can be restored later.
+
+#### Merging a branch into `main` (from the terminal)
+
+**1. Switch to the `main` branch locally:**
+
+```bash
+git checkout main
+```
+
+**2. Make sure local `main` is up to date with GitHub:**
+
+```bash
+git pull origin main
+```
+
+**3. Merge the feature branch (example: `001`) into `main`:**
+
+```bash
+git merge --no-ff genai-chat-001-basic
+```
+
+> `--no-ff` keeps a merge commit, so each branch stays visible in the history. A plain `git merge genai-chat-001-basic` also works.
+
+**4. Push the updated `main` to GitHub:**
+
+```bash
+git push origin main
+```
+
+**5. Tag the release (optional but recommended):**
+
+```bash
+git tag -a v0.1.0 -m "genai-chat-001-basic"
+git push origin v0.1.0
+```
+
+#### 🧹 Cleanup after merge
+
+Once merged, the feature branch is no longer needed.
+
+Delete the local branch:
+
+```bash
+git branch -d genai-chat-001-basic
+```
+
+Delete the remote branch (optional):
+
+```bash
+git push origin --delete genai-chat-001-basic
+```
+
+#### Start the next branch
+
+Always create it from the updated `main`:
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b genai-chat-002-system-prompt
+git push -u origin genai-chat-002-system-prompt
+```
+
+---
+
+### `genai-chat-001-basic` ✅
 
 **Goal:** Build a minimal, fully local chatbot.
 
@@ -464,8 +550,38 @@ Each branch builds on the previous one. This section records **what changed in e
 - Bootstrap 5 chat UI with markdown rendering, multi-turn history and a fast/quality model selector
 - Per-IP in-memory rate limiting (20 requests / 60 seconds)
 
+**Issue found during testing**
+
+With the small local models (`qwen2.5:1.5b`, `llama3.2:1b`), an ambiguous prompt confused the model:
+
+| # | User message | Model behaviour |
+|---|--------------|-----------------|
+| 1 | `I am SSR, 2+2?` | Ignored the math and invented a story about "SSR" being a Russian military unit |
+| 2 | `I am SSR. 2+2?` | Repeated the same wrong "SSR" explanation |
+| 3 | `My name is SSR. and i want do calculate by you 2+2` | Correct: `The answer to 2+2 is 4.` |
+
+**Takeaways**
+
+- Small models (1B–1.5B parameters) are easily distracted by names and abbreviations in short, ambiguous prompts.
+- They predict the next token; they do not reliably calculate. Clear, complete prompts give far better results.
+- The current system prompt gives the model no guidance on how to prioritise the user's actual question. This is addressed in the next branch.
+
 ---
 
+### `genai-chat-002-system-prompt` 🚧
+
+**Goal:** Understand how the system prompt affects model behaviour and make answers more reliable without changing the model.
+
+**Scope**
+
+- Review how the system prompt is defined and sent with each request
+- Rewrite it so the model focuses on the user's primary question (math, coding, etc.) instead of names or titles in the message
+- Re-test the `I am SSR, 2+2?` case with both `qwen2.5:1.5b` and `llama3.2:1b`
+- Optionally compare against a larger model (e.g. `llama3.1:8b`) if RAM allows
+
+**Changes made:** _to be filled in as the branch progresses._
+
+---
 
 ### Template for future branches
 
