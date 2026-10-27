@@ -37,7 +37,7 @@ class ChatAPIView(APIView):
         # Calls the specific response generator (overridden by child class)
         return self.generate_post_response(req)
 
-    def generate_post_response(self, chat_request):
+    def generate_post_response(self, chat_request: ChatRequest):
         """
         By default, generates a Non-Streaming Response Format.
         - It waits for the complete response to arrive.
