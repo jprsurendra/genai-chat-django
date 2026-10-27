@@ -453,7 +453,7 @@ Each branch builds on the previous one. This section records **what changed in e
 
 ---
 
-### `genai-chat-001-basic` ✅
+### Branch: `genai-chat-001-basic` ✅
 
 **Goal:** Build a minimal, fully local chatbot.
 
