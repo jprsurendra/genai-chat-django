@@ -447,4 +447,5 @@ MIT — use it, fork it, ship it. No warranty.
 
 ---
 
+
 *Last verified: Ubuntu 26.04.1 · Python 3.14.4 · Django 5.x · openai 3.x · pydantic 2.14.x · Ollama (llama3.2:1b + qwen2.5:1.5b)*
