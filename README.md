@@ -554,7 +554,23 @@ git push -u origin genai-chat-002-system-prompt
 
 *Testing of Branch-001 — [`docs/screenshot_001.png`](docs/screenshot_001.png)*
 
-**Issue found during testing**
+---
+
+### Branch 002: `genai-chat-002-system-prompt` 🚧
+
+**Goal:** Understand how the system prompt affects model behaviour and make answers more reliable without changing the model.
+
+**Scope**
+
+- Review how the system prompt is defined and sent with each request
+- Rewrite it so the model focuses on the user's primary question (math, coding, etc.) instead of names or titles in the message
+- Re-test the `I am SSR, 2+2?` case with both `qwen2.5:1.5b` and `llama3.2:1b`
+- Optionally compare against a larger model (e.g. `llama3.1:8b`) if RAM allows
+
+**Changes made:** _to be filled in as the branch progresses._
+
+
+**Issue found during testing of branch 001**
 
 With the small local models (`qwen2.5:1.5b`, `llama3.2:1b`), an ambiguous prompt confused the model:
 
@@ -578,22 +594,8 @@ This screenshot is a perfect example of the difference between small local AI mo
 - They predict the next token; they do not reliably calculate. Clear, complete prompts give far better results.
 - The current system prompt gives the model no guidance on how to prioritise the user's actual question. This is addressed in the next branch.
 
----
-
-### Branch 002: `genai-chat-002-system-prompt` 🚧
-
-**Goal:** Understand how the system prompt affects model behaviour and make answers more reliable without changing the model.
 
 📄 **[Click here to read the detailed analysis for Branch 002 (README.002.md)](README.002.md)**
-
-**Scope**
-
-- Review how the system prompt is defined and sent with each request
-- Rewrite it so the model focuses on the user's primary question (math, coding, etc.) instead of names or titles in the message
-- Re-test the `I am SSR, 2+2?` case with both `qwen2.5:1.5b` and `llama3.2:1b`
-- Optionally compare against a larger model (e.g. `llama3.1:8b`) if RAM allows
-
-**Changes made:** _to be filled in as the branch progresses._
 
 ---
 
