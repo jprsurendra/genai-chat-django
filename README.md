@@ -550,6 +550,10 @@ git push -u origin genai-chat-002-system-prompt
 - Bootstrap 5 chat UI with markdown rendering, multi-turn history and a fast/quality model selector
 - Per-IP in-memory rate limiting (20 requests / 60 seconds)
 
+[![Testing of Branch-001](docs/screenshot_001.png)](docs/screenshot_001.png)
+
+*Testing of Branch-001 — [`docs/screenshot_001.png`](docs/screenshot_001.png)*
+
 **Issue found during testing**
 
 With the small local models (`qwen2.5:1.5b`, `llama3.2:1b`), an ambiguous prompt confused the model:
@@ -559,6 +563,11 @@ With the small local models (`qwen2.5:1.5b`, `llama3.2:1b`), an ambiguous prompt
 | 1 | `I am SSR, 2+2?` | Ignored the math and invented a story about "SSR" being a Russian military unit |
 | 2 | `I am SSR. 2+2?` | Repeated the same wrong "SSR" explanation |
 | 3 | `My name is SSR. and i want do calculate by you 2+2` | Correct: `The answer to 2+2 is 4.` |
+
+
+[![Issue found during Testing Branch 001](docs/screenshot_002.png)](docs/screenshot_002.png)
+
+*Screenshot (Issue found during Testing Branch 001): small model confused by `I am SSR, 2+2?` — [`docs/screenshot_002.png`](docs/screenshot_002.png)*
 
 **Takeaways**
 
