@@ -237,6 +237,20 @@ Open in browser:
 
 ---
 
+```bash
+Important Error: 
+    AssertionError: Hop-by-hop header, 'Connection: keep-alive', not allowed
+    [27/Oct/2026 06:21:29] "POST /api/chat/stream HTTP/1.1" 500 59
+
+Root Cause:
+    You are running the server using WSGI (Django's default `runserver`) instead of ASGI (Uvicorn).
+    Django's WSGI server (which utilizes `wsgiref`) does not permit the setting of certain headers, known as "hop-by-hop" headers. `Connection: keep-alive` is one such header. When our `ChatStreamAPIView` attempted to send this header for streaming purposes, the WSGI server rejected it, resulting in a 500 Internal Server Error.
+    
+    We decided right from the start that we would use Uvicorn for streaming (SSE). Please stop your server (Ctrl + C) and run it again using Uvicorn:
+    uvicorn config.asgi:application --reload --port 8000
+```
+
+
 ## 7. VS Code Debugging (launch.json)
 
 To debug with breakpoints without typing the terminal command every time:
@@ -376,7 +390,7 @@ data: [DONE]
 
 - **20 requests / 60 seconds** per IP.
 - Exceeding the limit returns `429 Too Many Requests`.
-- In-memory only (resets on Uvicorn restart). Bump `RATE_LIMIT` in `chat/ratelimit.py` for local testing.
+- In-memory only (resets on Uvicorn restart). Bump `RATE_LIMIT` in `chat/utilities/ratelimit.py` for local testing.
 
 ---
 
