@@ -167,8 +167,11 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 OLLAMA_MODEL_FAST = os.getenv("OLLAMA_MODEL_FAST", "qwen2.5:1.5b")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
 SYSTEM_PROMPT = (
-    "You are a helpful, concise AI assistant. "
+    "You are a helpful, smart AI assistant. "
+    "Always focus on answering the user's primary question (like math or coding) "
+    "rather than getting confused by names or titles in the prompt. "
     "Use markdown for formatting. Use code blocks for code."
 )
 
