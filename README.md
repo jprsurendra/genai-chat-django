@@ -578,26 +578,6 @@ This screenshot is a perfect example of the difference between small local AI mo
 - They predict the next token; they do not reliably calculate. Clear, complete prompts give far better results.
 - The current system prompt gives the model no guidance on how to prioritise the user's actual question. This is addressed in the next branch.
 
-
-🕵️ **What went wrong in the chat?**
-- **The "SSR" Confusion:** When the prompt was `"I am SSR, 2+2?"`, the AI completely misunderstood the intent. It ignored the math and thought the user was talking about a Russian military unit (Special Security Reserve).
-- **Prompt Misinterpretation:** The AI got stuck trying to define what "SSR" means, completely forgetting the 2+2 calculation.
-- **The Final Success:** When the prompt was changed to `"My name is SSR. and i want do calculate by you 2+2"`, the structure was much clearer to the AI. It finally understood the math and gave the correct answer: **4**.
-
-🧠 **Why did this happen? (The LLM Truth)**
-- **Small Models are Literal:** 1B or 1.5B parameter models are very small. If you give them a short or slightly ambiguous sentence (`"I am SSR, 2+2?"`), they easily get confused.
-- **Context is Everything:** In the final prompt, the user provided clear context (`"My name is SSR"` + `"i want do calculate"`). The AI used this context to finally give the right answer.
-- **No Math Engine:** LLMs don't actually "calculate" like a calculator; they predict the next word. Small models are notoriously bad at math unless the prompt is extremely clear.
-
-🛠️ **How to fix this?**
-Since this is an educational app, here are 3 ways to make the AI smarter without changing the model:
-1. **Update the `SYSTEM_PROMPT`:** Make it stricter so the AI focuses on the user's actual intent. (*This is being addressed in Branch 002*).
-2. **Try the bigger model:** Switch from `qwen2.5:1.5b` to `llama3.2:1b`. *(If you have 8GB+ RAM, try `llama3.1:8b` for mind-blowing results!)*
-3. **How to prompt small models:** Be direct. 
-   - ❌ **Bad:** `I am SSR, 2+2?`
-   - ✅ **Good:** `Calculate 2+2.`
-
-
 ---
 
 ### Branch 002: `genai-chat-002-system-prompt` 🚧
