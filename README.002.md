@@ -36,7 +36,7 @@ This screenshot is a perfect example of the difference between small local AI mo
 🛠️ **How to fix this?**
 Since this is an educational app, here are 3 ways to make the AI smarter without changing the model:
 1. **Update the `SYSTEM_PROMPT`:** Make it stricter so the AI focuses on the user's actual intent. (*This is being addressed in Branch 002*).
-   <br>In your `"config/settings.py"`, your current system prompt is a bit too simple. Let's make it stricter so the AI focuses on the user's actual intent.
+   <br>In your `config/settings.py`, your current system prompt is a bit too simple. Let's make it stricter so the AI focuses on the user's actual intent.
    <br>
    ```
       SYSTEM_PROMPT = (
