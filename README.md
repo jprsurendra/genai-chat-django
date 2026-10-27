@@ -510,7 +510,7 @@ git tag -a v0.1.0 -m "genai-chat-001-basic"
 git push origin v0.1.0
 ```
 
-#### 🧹 Cleanup after merge
+#### 🧹 Cleanup after merge (Optional)
 
 Once merged, the feature branch is no longer needed.
 
