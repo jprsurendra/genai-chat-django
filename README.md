@@ -584,6 +584,8 @@ This screenshot is a perfect example of the difference between small local AI mo
 
 **Goal:** Understand how the system prompt affects model behaviour and make answers more reliable without changing the model.
 
+📄 **[Click here to read the detailed analysis for Branch 002 (README.002.md)](README.002.md)**
+
 **Scope**
 
 - Review how the system prompt is defined and sent with each request
