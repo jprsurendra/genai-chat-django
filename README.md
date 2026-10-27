@@ -48,6 +48,7 @@ Runs entirely on your machine — no cloud, no API keys, no cost.
 10. [API Reference](#10-api-reference)
 11. [Troubleshooting](#11-troubleshooting)
 12. [Design Decisions](#12-design-decisions)
+13. [Branch History](#13-branch-history)
 
 ---
 
@@ -441,11 +442,76 @@ data: [DONE]
 
 ---
 
+## 13. Branch History
+
+Each branch builds on the previous one. This section records **what changed in each branch and why**, so the project history stays easy to follow.
+
+| Branch | Status | Summary |
+|--------|--------|---------|
+| `genai-chat-001-basic` | ✅ Done | Basic streaming chatbot (Django + DRF + Ollama) |
+
+
+---
+
+### `genai-chat-001-basic` ✅
+
+**Goal:** Build a minimal, fully local chatbot.
+
+**What was built**
+
+- Django + DRF `APIView` backend with non-streaming (`/api/chat`) and SSE streaming (`/api/chat/stream`) endpoints
+- Provider-agnostic LLM wrapper (`chat/llm.py`) using the `openai` SDK against Ollama
+- Bootstrap 5 chat UI with markdown rendering, multi-turn history and a fast/quality model selector
+- Per-IP in-memory rate limiting (20 requests / 60 seconds)
+
+**Issue found during testing**
+
+With the small local models (`qwen2.5:1.5b`, `llama3.2:1b`), an ambiguous prompt confused the model:
+
+| # | User message | Model behaviour |
+|---|--------------|-----------------|
+| 1 | `I am SSR, 2+2?` | Ignored the math and invented a story about "SSR" being a Russian military unit |
+| 2 | `I am SSR. 2+2?` | Repeated the same wrong "SSR" explanation |
+| 3 | `My name is SSR. and i want do calculate by you 2+2` | Correct: `The answer to 2+2 is 4.` |
+
+**Takeaways**
+
+- Small models (1B–1.5B parameters) are easily distracted by names and abbreviations in short, ambiguous prompts.
+- They predict the next token; they do not reliably calculate. Clear, complete prompts give far better results.
+- The current system prompt gives the model no guidance on how to prioritise the user's actual question. This is addressed in the next branch.
+
+---
+
+
+### Template for future branches
+
+Copy this block for each new branch:
+
+```markdown
+### `genai-chat-00X-short-name` 🚧
+
+**Goal:** One sentence on what this branch achieves.
+
+**What changed**
+
+- Change 1
+- Change 2
+
+**Files touched**
+
+- `path/to/file.py` — what changed
+
+**Result / Learnings**
+
+- What worked, what did not, what comes next
+```
+
+---
+
 ## 📜 License
 
 MIT — use it, fork it, ship it. No warranty.
 
 ---
-
 
 *Last verified: Ubuntu 26.04.1 · Python 3.14.4 · Django 5.x · openai 3.x · pydantic 2.14.x · Ollama (llama3.2:1b + qwen2.5:1.5b)*
