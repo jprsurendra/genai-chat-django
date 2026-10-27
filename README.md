@@ -464,22 +464,6 @@ Each branch builds on the previous one. This section records **what changed in e
 - Bootstrap 5 chat UI with markdown rendering, multi-turn history and a fast/quality model selector
 - Per-IP in-memory rate limiting (20 requests / 60 seconds)
 
-**Issue found during testing**
-
-With the small local models (`qwen2.5:1.5b`, `llama3.2:1b`), an ambiguous prompt confused the model:
-
-| # | User message | Model behaviour |
-|---|--------------|-----------------|
-| 1 | `I am SSR, 2+2?` | Ignored the math and invented a story about "SSR" being a Russian military unit |
-| 2 | `I am SSR. 2+2?` | Repeated the same wrong "SSR" explanation |
-| 3 | `My name is SSR. and i want do calculate by you 2+2` | Correct: `The answer to 2+2 is 4.` |
-
-**Takeaways**
-
-- Small models (1B–1.5B parameters) are easily distracted by names and abbreviations in short, ambiguous prompts.
-- They predict the next token; they do not reliably calculate. Clear, complete prompts give far better results.
-- The current system prompt gives the model no guidance on how to prioritise the user's actual question. This is addressed in the next branch.
-
 ---
 
 
