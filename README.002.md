@@ -12,6 +12,7 @@ With the small local models (`qwen2.5:1.5b`, `llama3.2:1b`), an ambiguous prompt
 [![Issue found during Testing Branch 001](docs/screenshot_002.png)](docs/screenshot_002.png)
 
 *Screenshot (Issue found during Testing Branch 001): small model confused by `I am SSR, 2+2?` — [`docs/screenshot_002.png`](docs/screenshot_002.png)*
+
 **Deep Dive into Model Behavior (Screenshot Analysis)**
 
 This screenshot is a perfect example of the difference between small local AI models (like `qwen2.5:1.5b` or `llama3.2:1b`) and large models (like ChatGPT-4). Here is an analysis of what happened:
@@ -81,23 +82,70 @@ Since this is an educational app, here are 3 ways to make the AI smarter without
 This branch was dedicated to understanding how the `SYSTEM_PROMPT` drastically changes the behavior of small local models (1B-1.5B parameters). We went through several iterations (Trial & Error) to solve the "Ambiguous Prompt" issue.
 
 ### Iteration 1: The Math Confusion
+
+- **System Prompt used:**
+
+  ```python
+  SYSTEM_PROMPT = (
+      "You are a helpful, concise AI assistant. "
+      "Use markdown for formatting. Use code blocks for code."
+  )
+  ```
+
 - **Prompt:** `I am SSR, 2+2?`
 - **Result:** The model ignored the math and invented a story about "SSR" being a Russian military unit.
 - **Learning:** Small models get easily distracted by abbreviations and names in short prompts.
 
 ### Iteration 2: Solving the Math Issue
-- **Prompt Added:** *"Focus strictly on the user's questions. Do not invent stories..."*
+
+- **System Prompt used:**
+
+  ```python
+  SYSTEM_PROMPT = (
+      "You are a helpful, smart AI assistant. "
+      "Always focus on answering the user's primary question (like math or coding) "
+      "rather than getting confused by names or titles in the prompt. "
+      "Use markdown for formatting."
+  )
+  ```
+
 - **Result:** Math solved! The AI answered `2+2 is 4`. But a new issue appeared: When asked "Who am I?", it said *"You are the User, not an AI assistant."*
 - **Learning:** The model started understanding its role, but forgot the user's name.
 
 ### Iteration 3: The "Name Amnesia" & Hallucination
-- **Prompt Added:** *"Remember the user's name."*
+
+- **System Prompt used:**
+
+  ```python
+  SYSTEM_PROMPT = (
+      "You are a helpful AI assistant talking to a human User. "
+      "IMPORTANT: Pay close attention to the user's name and personal details. "
+      "If the user tells you their name (for example, 'My name is SSR'), you MUST remember it. "
+      "If the user asks 'Who am I?', you should reply with their name. "
+      "Do not confuse your identity with the user's identity. "
+      "Use markdown for formatting."
+  )
+  ```
+
 - **Result:** The model hallucinated! It said *"I'm SSR myself! You are SSR, a virtual assistant created by Anthropic."*
 - **Learning:** Small models struggle with "Theory of Mind". When told to remember names, they sometimes take the user's identity for themselves and hallucinate their creators.
 
 ### Iteration 4: The Final Fix (Identity & Persona)
-- **Prompt Added:** *"You are a helpful AI named 'GenAI'. You are NOT the user. If asked, reply 'You are [Name]'."*
-- **Result:** 
+
+- **System Prompt used:**
+
+  ```python
+  SYSTEM_PROMPT = (
+      "You are a helpful AI assistant named 'GenAI'. "
+      "You are NOT the user. You are having a conversation with a human user. "
+      "CRITICAL RULE: If the user tells you their name (e.g., 'I am SSR'), you must remember it. "
+      "If the user asks 'Who am I?', you must reply: 'You are [User's Name]'. "
+      "Do not claim to be created by Anthropic or OpenAI. You are a local AI running on Ollama. "
+      "Answer math questions accurately. Use markdown for formatting."
+  )
+  ```
+
+- **Result:**
   - `I am SSR, 2+2?` → "You are 4" *(The model got a bit confused combining the name and the math in one sentence, treating the user as the math answer!)*
   - `Who am I?` → **"You are SSR."** (Perfect memory!)
 
@@ -105,7 +153,7 @@ This branch was dedicated to understanding how the `SYSTEM_PROMPT` drastically c
 
 **Final Takeaways for Educational Purpose**
 
-1. **Small Models are Literal & Fragile:** They don't have human common sense. A prompt like `"I am SSR, 2+2?"` is too complex for them. 
+1. **Small Models are Literal & Fragile:** They don't have human common sense. A prompt like `"I am SSR, 2+2?"` is too complex for them.
 2. **Keep Prompts Separate:** If you want math, just say `"Calculate 2+2"`. If you want to set a name, say `"My name is SSR."` in a separate message.
 3. **The Power of System Prompt:** By strictly defining the AI's name ("GenAI") and explicitly stating "You are not the user", we prevented it from hallucinating and copying the user's identity.
 4. **Know your model:** If you need complex reasoning and identity handling, 1.5B parameters might not be enough. Switch to `llama3.1:8b` in your `.env` file for a much smarter experience!
