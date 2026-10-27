@@ -36,6 +36,16 @@ This screenshot is a perfect example of the difference between small local AI mo
 🛠️ **How to fix this?**
 Since this is an educational app, here are 3 ways to make the AI smarter without changing the model:
 1. **Update the `SYSTEM_PROMPT`:** Make it stricter so the AI focuses on the user's actual intent. (*This is being addressed in Branch 002*).
+   <br>In your config/settings.py, your current system prompt is a bit too simple. Let's make it stricter so the AI focuses on the user's actual intent.
+   <br>
+   ```
+      SYSTEM_PROMPT = (
+          "You are a helpful, smart AI assistant. "
+          "Always focus on answering the user's primary question (like math or coding) "
+          "rather than getting confused by names or titles in the prompt. "
+          "Use markdown for formatting."
+      )
+   ```
 2. **Try the bigger model:** Switch from `qwen2.5:1.5b` to `llama3.2:1b`. *(If you have 8GB+ RAM, try `llama3.1:8b` for mind-blowing results!)*
 3. **How to prompt small models:** Be direct. 
    - ❌ **Bad:** `I am SSR, 2+2?`
