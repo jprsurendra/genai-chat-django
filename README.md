@@ -597,6 +597,25 @@ This screenshot is a perfect example of the difference between small local AI mo
 
 📄 **[Click here to read the detailed analysis for Branch 002 (README.002.md)](README.002.md)**
 
+
+### Branch 003: `genai-chat-003-rag` 🚧
+
+**Goal:** Implement Embeddings and Cosine Similarity to understand the mathematical foundation of RAG.
+
+📄 **[Click here to read the detailed analysis for Branch 003 (README.003.md)](README.003.md)**
+
+**Scope**
+
+- Understand how text is converted into vectors (Embeddings) using Ollama's `nomic-embed-text`.
+- Calculate Cosine Similarity between English and Hindi sentences.
+- Debug and print similarity scores in the terminal for educational purposes.
+- Prepare the foundation for storing and retrieving data from a Vector Database (ChromaDB).
+
+**Changes made:** 
+- Created `RAGEngine` in `chat/utilities/rags/rag_engine.py`.
+- Added `debug_embeddings` method to `LLMService`.
+- Hooked the debug method into `ChatAPIView`.
+- Installed `chromadb`, `numpy`, and `ollama` Python packages.
 ---
 
 ### Template for future branches

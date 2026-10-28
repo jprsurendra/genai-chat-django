@@ -37,6 +37,10 @@
   </div>
 
   <form id="chatForm" class="input-group mb-4">
+    <button class="btn btn-secondary" type="button" id="uploadBtn"
+            title="Upload a PDF or TXT document" aria-label="Upload document">
+      <i class="bi bi-paperclip"></i>
+    </button>
     <textarea
       id="userInput"
       class="form-control"
@@ -47,6 +51,9 @@
       <i class="bi bi-send"></i>
     </button>
   </form>
+
+  <!-- Kept outside the input-group so Bootstrap's rounded corners stay intact -->
+  <input type="file" id="fileUpload" accept=".pdf,.txt" hidden />
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
