@@ -1,63 +1,68 @@
-### Branch 003: `genai-chat-003-rag` 🚧
+# Branch 003: `genai-chat-003-rag` (work in progress)
 
-**Goal:** 
-To understand the mathematical foundation of RAG (Retrieval-Augmented Generation) by implementing **Embeddings**, calculating **Cosine Similarity**, and finally building a **Local Vector Store (ChromaDB)** to give the AI external knowledge.
+Until now the chatbot only knew what the model itself knew. In this branch I wanted to give it knowledge of my own, and I did not want to just plug in a framework and call it done. So I went in small steps: first turn text into vectors and look at the numbers, then store a few documents in a local ChromaDB, and finally feed the retrieved text back into the prompt.
 
----
-
-### Part 1: Understanding Embeddings & Similarity
-
-Before we can build a smart document assistant, we need to understand how AI converts text into numbers (Vectors). We integrated Ollama's `nomic-embed-text` model to generate embeddings for our sentences and calculate their "Cosine Similarity".
-
-**How it works:**
-1. **Embedding:** Text is converted into a high-dimensional vector (an array of numbers).
-2. **Cosine Similarity:** We calculate the angle between two vectors. A score of `1.0` means the sentences are identical, while `0.0` means they are completely unrelated.
-
-#### Testing & Observations (Part 1)
-
-We tested the system with the following test sentences to understand cross-language and contextual similarity:
-- `"मुझे चाय पसंद है"` (Hindi)
-- `"I love tea"` (English)
-- `"मुझे कॉफ़ी बहुत पसंद है"` (Hindi)
-- `"The weather is nice today"` (English)
-
-#### Test Results (Terminal Output)
-
-| User Input | Highest Similarity Match | Score | Observation |
-|------------|--------------------------|-------|-------------|
-| `I love tea` | `I love tea` | **1.0000** | Perfect match. |
-| `is tea good for helth` | `I love tea` | **0.7045** | The model correctly linked the word "tea". |
-| `I like softdrink` | `I love tea` | **0.4720** | Low score. The model correctly identified that a "softdrink" is not closely related to "tea" or "coffee". |
-
-#### AI Chat Response vs. Embedding Score
-
-We noticed an interesting difference between the **Embedding Score** and the **LLM Response**:
-1. **Prompt:** `I love tea` → **AI Response:** *"I'm sorry, but I'm not sure what you're asking for..."*
-   - **Why?** Small models (1.5B) get confused by statements. They expect a question.
-2. **Prompt:** `is tea good for helth` → **AI Response:** A detailed explanation of tea's health benefits.
-   - **Why?** This was a clear question. Note that this answer came from the LLM's pre-trained knowledge, **not** from our RAG database.
+Everything here runs locally on Ollama, same as the earlier branches. The embedding model is `nomic-embed-text`, the chat models are still the small `qwen2.5:1.5b` / `llama3.2:1b`.
 
 ---
 
-### Part 2: Simple Vector Store (Manual) & RAG Integration
+## Part 1: What an embedding actually looks like
 
-**Goal:** 
-To store manual documents in a local Vector Database (ChromaDB) and retrieve them to answer user queries accurately.
+An embedding is just a list of numbers that represents a piece of text. For `nomic-embed-text` that list has 768 values. Two texts with similar meaning should end up pointing in a similar direction, and cosine similarity measures exactly that: the angle between the two vectors.
 
-**How it works:**
-1. **Store:** We created a manual knowledge base (e.g., "Delhi भारत की राजधानी है") and stored it in ChromaDB using the `store_documents()` method.
-2. **Retrieve:** When a user asks a question, the `retrieve_similar()` method searches ChromaDB for the most relevant document.
-3. **Augment:** The retrieved document is injected into the `SYSTEM_PROMPT` in `_build_messages()`.
-4. **Generate:** The LLM uses this context to generate an accurate answer.
+```text
+cos(θ) = (A · B) / (‖A‖ × ‖B‖)
+```
 
-#### Test 1: The "Delhi" Test (Before Augmentation)
+1.0 means the vectors point the same way. In theory 0 means unrelated, but as you will see below, real text almost never gets there.
 
-When we asked **"Delhi कहाँ है?"**, our `RAGEngine` successfully retrieved the correct data from the Vector Store, but the final LLM response was wrong because we had not injected the context into the prompt yet.
+### The experiment
+
+I embedded four sentences, two Hindi and two English, and compared them with whatever the user types:
+
+- `मुझे चाय पसंद है`
+- `I love tea`
+- `मुझे कॉफ़ी बहुत पसंद है`
+- `The weather is nice today`
+
+### Results
+
+| User input | Best match | Score | What I take from it |
+|------------|------------|-------|---------------------|
+| `I love tea` | `I love tea` | 1.0000 | Sanity check. A sentence compared with itself. |
+| `is tea good for helth` | `I love tea` | 0.7045 | Typo and all, it still lands on the tea sentence. |
+| `I like softdrink` | `I love tea` | 0.4720 | Related-ish (both are drinks) but clearly weaker. |
+
+The thing I did not expect: "unrelated" does not mean close to 0. `The weather is nice today` scores around 0.41 against a question about Delhi. In this setup, roughly 0.4 is the floor, and anything below about 0.5 should be treated as "not really related". I had assumed the scale would be more intuitive.
+
+### Embedding score vs. what the LLM says
+
+The embedding score and the chat answer are two separate things, and they disagreed in an interesting way.
+
+1. Prompt: `I love tea`. The model replied roughly "I'm sorry, but I'm not sure what you're asking for...". A small model sees a statement, not a question, and has nothing to do with it.
+2. Prompt: `is tea good for helth`. It gave a long, reasonable explanation of the health benefits of tea. That answer came entirely from the model's training data. Nothing was retrieved from my database yet.
+
+So a high similarity score does not mean the LLM "used" the matching text. At this stage the two are not connected at all.
+
+---
+
+## Part 2: A manual vector store and the first RAG loop
+
+For this part I hand-wrote a tiny knowledge base (for example `Delhi भारत की राजधानी है।` and `Python एक programming language है।`) and stored it in ChromaDB. The flow is the usual one:
+
+1. **Store:** `store_documents()` embeds each document and saves it in ChromaDB.
+2. **Retrieve:** `retrieve_similar()` embeds the question and returns the closest documents.
+3. **Augment:** `_build_messages()` puts the retrieved text into the system prompt.
+4. **Generate:** the LLM answers using that context.
+
+I tested it with one question, `Delhi कहाँ है?`, and it took three attempts to get a correct answer.
+
+### Test 1: retrieval works, the answer is still wrong
 
 - **User:** `Delhi कहाँ है?`
-- **Chat Response:** *"Delhi अमेरिका में है।"* (Delhi is in America) ❌
+- **Chat reply:** `Delhi अमेरिका में है।` (wrong)
 
-**Console Output:**
+The console, however, showed that retrieval was already doing its job:
 
 ```text
 ============================================================
@@ -80,48 +85,55 @@ Top Matches Found:
 ============================================================
 ```
 
-> **Note:** The console proves the retrieval worked (`Delhi भारत की राजधानी है।` was the top match). The small model still hallucinated because we only printed the retrieved data in the console and did not pass it to the AI.
+At this point I was only printing the retrieved documents to the console. I had not yet passed them to the model, so of course it guessed. That was a useful reminder: retrieval and generation are two separate steps, and you can verify the first one on its own.
 
-#### Test 2: The "Hertz" Hallucination (Model Limitation)
+Two things in that output are worth a second look:
 
-After updating `_build_messages()` to inject the retrieved context into the prompt, we encountered a funny hallucination. The AI generated:
+- **Language seems to matter more than topic.** The Delhi question scores about 0.69 against the Hindi tea and coffee sentences, but only about 0.41 against the English ones, even though none of them have anything to do with Delhi. My guess is that `nomic-embed-text` is mostly an English model, so Hindi text clusters together by script before it clusters by meaning. I have not tested this properly yet.
+- **Top-k always returns something.** Result #2, the Python sentence, has nothing to do with the question. Asking for the top 2 gives you 2, relevant or not. Without a minimum score, junk will end up in the prompt.
 
-> **"Delhi हार्ट्ज की राजधानी है।"** (Delhi is the capital of Hertz)
+### Test 2: the "Hertz" hallucination
 
-**Why did this happen?**
+Next I injected the retrieved text into the prompt through `_build_messages()`. The answer became:
 
-Our RAG engine successfully retrieved the exact text (`Delhi भारत की राजधानी है।`). However, the small language model failed to read the word "भारत" (Bharat) correctly and hallucinated "हार्ट्ज" (Hertz) due to its limited vocabulary and tokenizer.
+> `Delhi हार्ट्ज की राजधानी है।` (Delhi is the capital of Hertz)
 
-#### Test 3: The Final Fix (Success! ✅)
+The right sentence was in the prompt, word for word. The model still misread `भारत` and produced `हार्ट्ज`. My best explanation is that a 1.5B model has a weak grip on Devanagari tokens and fills in something that sounds plausible. It is a model limitation, not a retrieval bug.
 
-We updated the System Prompt to be stricter, instructing the model to *"Read the following context carefully and copy the exact words"*.
+### Test 3: a stricter prompt
 
-**Final Result:**
+I tightened the system prompt to tell the model to read the context carefully and copy the exact words from it. That was enough:
 
-- **User Query:** `Delhi कहाँ है?`
-- **Vector Store Retrieval:** `"Delhi भारत की राजधानी है।"`
-- **LLM Output:** **"Delhi भारत की राजधानी है।"** (No hallucination!)
+- **Query:** `Delhi कहाँ है?`
+- **Retrieved:** `Delhi भारत की राजधानी है।`
+- **Answer:** `Delhi भारत की राजधानी है।`
 
 [![RAG final result](docs/screenshot_003_rag.png)](docs/screenshot_003_rag.png)
 
-*Screenshot: final RAG result — [`docs/screenshot_003_rag.png`](docs/screenshot_003_rag.png)*
+*Final result: [`docs/screenshot_003_rag.png`](docs/screenshot_003_rag.png)*
+
+It works, but I would not call this solved. "Copy the exact words" is a workaround for a small model; a bigger one would not need it.
 
 ---
 
-### Educational Takeaways
+## What I learned
 
-1. **Embeddings are Language-Agnostic:** `"मुझे चाय पसंद है"` and `"I love tea"` had a similarity score of **0.4186**. The model knows they are related, even though the words are completely different.
-2. **Statements vs. Questions:** Local LLMs are trained to be assistants. If you just say "I love tea", they don't know how to reply. You must ask a question.
-3. **The Power of Similarity:** RAG works by finding the highest similarity scores. If a user asks a question, the system searches the database and feeds the top results to the LLM.
-4. **RAG vs. Model Size:** RAG provides the correct context, but the final generation still depends on the model's ability to read that context. For perfect Hindi/English generation, larger models (8B+) are recommended.
+1. **Similarity scores are relative, not absolute.** Identical text gives 1.0, but unrelated text lands near 0.4, not 0. Pick thresholds by looking at your own data.
+2. **Cross-language similarity exists but is weak.** `मुझे चाय पसंद है` vs `I love tea` scored 0.4186, which is barely above the "unrelated" floor seen above. Same-language pairs scored much higher even when unrelated. So I would not rely on this model for Hindi-to-English retrieval.
+3. **Retrieval and generation fail independently.** Test 1 had correct retrieval and a wrong answer. Test 2 had correct retrieval, correct prompt, and still a wrong answer. Debug them one at a time.
+4. **Small models are the weak link.** RAG hands the model the right text, but the model still has to read it. For reliable Hindi output, a bigger model (8B or more) is worth trying.
 
 ---
 
-### Next Steps for Branch 003
+## Things I still want to check or build
 
-- [ ] **Full Document Upload:** Create an API endpoint and UI button to upload PDFs/text files directly.
-- [ ] **Chunking Strategy:** Implement a text splitter to break large documents into smaller chunks before embedding.
-- [ ] **Chat History Embedding:** Embed previous conversations so the AI remembers older sessions.
+- [ ] **Task prefixes.** `nomic-embed-text` is trained to expect `search_document: ` on stored text and `search_query: ` on questions. I need to check whether my embedding code adds them; without them the scores may be a little off.
+- [ ] **Minimum score.** Drop retrieved documents below a threshold instead of always passing top-k to the prompt.
+- [ ] **Distance metric.** ChromaDB defaults to L2 distance. If I want cosine, I should set it explicitly on the collection and make sure I am reading distances, not similarities.
+- [ ] **A multilingual embedding model.** Compare against one and see whether the Hindi results improve.
+- [ ] **Document upload.** An API endpoint and a UI button for PDF and text files.
+- [ ] **Chunking.** A text splitter so large documents are broken into smaller pieces before embedding.
+- [ ] **Chat history embedding.** Let the assistant recall earlier sessions.
 
 ---
 
@@ -130,61 +142,74 @@ We updated the System Prompt to be stricter, instructing the model to *"Read the
 
 <br>
 
-**ब्रांच 003 का मकसद:**
-RAG (Retrieval-Augmented Generation) को गहराई से समझने के लिए हमने पहले **Embeddings** और **Cosine Similarity** (समानता) को लागू किया, और फिर एक **लोकल वेक्टर डेटाबेस (ChromaDB)** बनाया।
+**इस branch का मकसद**
 
-**भाग 1: Embeddings और Similarity**
-- **कैसे काम करता है?** AI टेक्स्ट को नंबरों की लिस्ट (Vector) में बदल देता है। हम दो वाक्यों के वेक्टर के बीच का एंगल निकालते हैं। स्कोर `1.0` का मतलब दोनों वाक्य एक जैसे हैं।
-- **हमारे टेस्ट:** `I love tea` का खुद के साथ स्कोर **1.0000** आया। जब हमने सिर्फ बयान (Statement) दिया, तो AI कन्फ्यूज हो गया। जब सवाल पूछा, तो उसने अपने ज्ञान से जवाब दिया।
+अब तक chatbot सिर्फ़ वही जानता था जो model ने training में सीखा था। इस branch में मैंने उसे अपना खुद का knowledge देने की कोशिश की, और वह भी छोटे-छोटे steps में: पहले text को vector में बदलकर numbers देखे, फिर ChromaDB में कुछ documents रखे, और आख़िर में retrieve किया हुआ text prompt में भेजा।
 
-**भाग 2: Vector Store और RAG Integration**
-- **RAG का जादू:** जब हमने पूछा **"Delhi कहाँ है?"**, तो RAG से पहले AI ने गलत बोला *"Delhi अमेरिका में है"*।
-- **कंसोल का सबूत:** कंसोल में Top Match `Delhi भारत की राजधानी है।` दिखा, यानी retrieval सही था। लेकिन शुरुआत में हमने यह data सिर्फ़ कंसोल में print किया था, AI को नहीं दिया था, इसलिए जवाब गलत आया।
-- **डेटाबेस में सेव करने के बाद:** हमने ChromaDB में *"Delhi भारत की राजधानी है"* सेव किया। जब यूज़र ने सवाल पूछा, तो सिस्टम ने सही डॉक्यूमेंट ढूँढ निकाला और AI को दिया।
-- **"हार्ट्ज" वाली मज़ेदार गलती:** छोटे मॉडल ने "भारत" को पढ़ने के बजाय "हार्ट्ज" (Hertz) लिख दिया। 
-- **समाधान:** हमने Prompt को सख्त किया और AI ने आखिरकार सही जवाब दिया: **"Delhi भारत की राजधानी है।"**
+**Part 1: Embeddings और similarity**
 
-**अंतिम सीख:**
-RAG सही कॉन्टेक्स्ट देता है, लेकिन उसे सही से पढ़ने के लिए बड़े मॉडल (जैसे 8B) की ज़रूरत होती है। छोटे मॉडल्स (1.5B) कभी-कभी शब्दों को गलत पढ़ सकते हैं।
+- Embedding यानी text को numbers की एक list में बदलना। `nomic-embed-text` में यह list 768 numbers की होती है।
+- Cosine similarity दो vectors के बीच का angle नापती है। 1.0 का मतलब दोनों एक जैसे हैं।
+- मुझे यह उम्मीद नहीं थी कि बिल्कुल unrelated text भी 0 के पास नहीं आता। मेरे tests में लगभग 0.4 के आसपास ही रहा। इसलिए 0.5 से नीचे के score को "ज़्यादा related नहीं" मानना ठीक रहेगा।
+- `I love tea` को खुद से compare करने पर 1.0000 आया। `is tea good for helth` का score 0.7045 आया, यानी typo के बावजूद tea वाला sentence मिल गया।
+- Chat में सिर्फ़ statement (`I love tea`) देने पर छोटा model confuse हुआ। Question पूछने पर उसने अपनी training के knowledge से जवाब दिया, database से नहीं।
+
+**Part 2: Vector store और RAG**
+
+- `Delhi कहाँ है?` पर पहले जवाब आया *"Delhi अमेरिका में है"*, जो गलत था।
+- Console में दिख रहा था कि retrieval सही था (`Delhi भारत की राजधानी है।` पहला match)। गलती इसलिए हुई क्योंकि उस समय मैं retrieved data सिर्फ़ console में print कर रहा था, model को नहीं दे रहा था।
+- Console से दो और बातें दिखीं: Hindi query का score Hindi वाले unrelated sentences से ज़्यादा (लगभग 0.69) आया और English वाले sentences से कम (लगभग 0.41)। और top-2 मांगने पर एक unrelated document (Python वाला) भी वापस आया, इसलिए आगे minimum score लगाना पड़ेगा।
+- Context को prompt में डालने के बाद model ने `भारत` की जगह `हार्ट्ज` लिख दिया। Right text prompt में था, फिर भी छोटा model उसे सही नहीं पढ़ पाया।
+- Prompt को सख़्त किया ("context ध्यान से पढ़ो और exact words copy करो"), तब जवाब सही आया: **"Delhi भारत की राजधानी है।"**
+
+**सीख**
+
+RAG model को सही text दे देता है, लेकिन उसे पढ़ना फिर भी model को ही पड़ता है। Retrieval और generation अलग-अलग जगह fail हो सकते हैं, इसलिए debug भी एक-एक करके करें। Hindi के भरोसेमंद output के लिए बड़ा model (8B या उससे ऊपर) आज़माना चाहिए।
 
 </details>
 
 ---
 
-### Under the Hood: What is the `chroma_db` folder?
+## Under the hood: the `chroma_db` folder
 
-When you run the application and store documents (like our manual knowledge base), you will notice a new folder created at `rag/rag_data/chroma_db`. 
+After you store documents, a new folder appears at `rag/rag_data/chroma_db`. That is the local vector database. It lives on disk, so your data survives a server restart.
 
-This folder is the **Local Vector Database** created by ChromaDB. It is the "brain" or "memory" of our RAG system. It ensures that your data is saved to your hard drive and persists even if you restart the server.
+What is inside:
 
-#### What's inside the folder?
-1. **`chroma.sqlite3`**: This is the main relational database. It stores the metadata, such as which vector belongs to which text document and its unique ID. (Similar to an index page of a book).
-2. **Long UID Folders (e.g., `ff72dbe1-33d1-4ce5-970c-8fdcd31af542`)**: These folders contain the actual **Vector Embeddings** (arrays of numbers) stored in a binary format. (Similar to the actual content pages of the book).
+- **`chroma.sqlite3`** holds the metadata: document IDs, the original text, and which vector belongs to which document. Think of it as the index of a book.
+- **Folders with long UUID names** (for example `ff72dbe1-33d1-4ce5-970c-8fdcd31af542`) hold the actual vectors in binary form.
 
-#### How is it used?
-Whenever a user asks a question, the `RAGEngine` queries this database. ChromaDB calculates the similarity between the user's query vector and the millions of vectors stored in this folder to find the most relevant context.
+When a user asks something, `RAGEngine` embeds the question and asks ChromaDB for the closest stored vectors.
 
-#### ⚠️ Important Maintenance Rules:
-- **Never commit this folder to Git/GitHub:** Because this is local binary data, it will bloat your repository. Add `rag/rag_data/chroma_db/` to your `.gitignore` file.
-- **How to reset the database:** If you want to wipe the AI's memory and start fresh, simply stop the server, delete the `chroma_db` folder, and restart the server. ChromaDB will automatically create a new, empty one.
+Two practical rules:
+
+- **Do not commit this folder.** It is local binary data and will bloat the repo. Add this to `.gitignore`:
+
+  ```gitignore
+  rag/rag_data/chroma_db/
+  ```
+
+- **To reset the knowledge base,** stop the server, delete the `chroma_db` folder, and start the server again. ChromaDB creates a fresh, empty database on its own.
 
 <details>
 <summary><b>🇮🇳 हिंदी में समझें (Click to expand Hindi Explanation)</b></summary>
 
 <br>
 
-**`chroma_db` फोल्डर क्या है?**
-यह फोल्डर ChromaDB द्वारा बनाया गया एक **लोकल वेक्टर डेटाबेस** है। इसे आप हमारे RAG सिस्टम का "दिमाग" या "मेमोरी" समझ सकते हैं। यह आपके डेटा को आपकी हार्ड डिस्क पर सेव करता है, ताकि सर्वर रीस्टार्ट होने पर भी डेटा गायब न हो।
+**`chroma_db` folder क्या है?**
 
-**इसके अंदर क्या होता है?**
-1. **`chroma.sqlite3`**: यह मुख्य डेटाबेस है जो यह बताता है कि कौन सा वेक्टर किस टेक्स्ट से जुड़ा है (जैसे किताब का इंडेक्स)।
-2. **लंबे नाम वाले फोल्डर (UUID)**: इनके अंदर आपके टेक्स्ट के असली **Vectors** (नंबरों की लिस्ट) बाइनरी फॉर्मेट में सेव होते हैं।
+यह ChromaDB का बनाया हुआ local vector database है। यह data आपकी hard disk पर save होता है, इसलिए server restart होने पर भी गायब नहीं होता।
 
-**इसका इस्तेमाल कैसे होता है?**
-जब भी आप कोई सवाल पूछते हैं, तो `RAGEngine` इसी फोल्डर में जाकर सबसे मिलता-जुलता वेक्टर ढूंढता है और उसे AI को भेजता है।
+**अंदर क्या होता है?**
 
-**ध्यान रखने वाली बातें:**
-- **GitHub पर पुश न करें:** इसे अपनी `.gitignore` में जोड़ लें (`rag/rag_data/chroma_db/`), क्योंकि यह लोकल डेटा है।
-- **डेटा रीसेट कैसे करें:** अगर आप AI की मेमोरी साफ करना चाहते हैं, तो सर्वर बंद करें, इस फोल्डर को डिलीट करें, और सर्वर दोबारा चालू करें। ChromaDB अपने आप एक नया खाली डेटाबेस बना लेगा।
+1. **`chroma.sqlite3`:** यहाँ metadata रहता है, जैसे document का ID, original text, और कौन सा vector किस document से जुड़ा है। किताब के index की तरह।
+2. **लंबे नाम वाले (UUID) folders:** इनमें असली vectors binary format में रखे होते हैं।
+
+जब कोई सवाल पूछा जाता है, तो `RAGEngine` उसका vector बनाकर इसी database से सबसे पास वाले vectors माँगता है।
+
+**ध्यान रखने वाली बातें**
+
+- इस folder को Git पर push न करें। इसे `.gitignore` में जोड़ें: `rag/rag_data/chroma_db/`
+- Knowledge base reset करना हो तो server बंद करें, `chroma_db` folder delete करें और server फिर चालू करें। ChromaDB अपने आप नया खाली database बना लेगा।
 
 </details>
