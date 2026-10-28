@@ -119,3 +119,20 @@ class RAGEngine:
         print(f"   Successfully uploaded and embedded {len(chunks)} chunks from the document.")
         print("=" * 60)
         return f"Successfully uploaded and embedded {len(chunks)} chunks from the document."
+
+    def store_chat_message(self, role: str, content: str):
+        """
+        Stores individual chat messages (user or assistant) into the Vector Store.
+        This allows the AI to remember past conversations.
+        """
+        import uuid
+        doc_id = str(uuid.uuid4())
+
+        # We format the text so it's clear who said what
+        formatted_text = f"{role.capitalize()}: {content}"
+
+        self.collection.add(
+            documents=[formatted_text],
+            ids=[doc_id],
+            metadatas=[{"role": role, "type": "chat_history"}]  # Metadata for filtering later
+        )

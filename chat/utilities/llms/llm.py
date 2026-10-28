@@ -110,7 +110,14 @@ class LLMService:
             temperature=0.7,
             max_tokens=800,
         )
-        return resp.choices[0].message.content or ""
+        reply_text =  resp.choices[0].message.content or ""
+
+        # Save to Vector DB for future RAG
+        self.rag_engine.store_chat_message("User", user_message)
+        if reply_text:
+            self.rag_engine.store_chat_message("AI", reply_text)
+
+        return reply_text
 
     async def stream_reply(
         self, user_message: str, history: list[ChatMessage], use_fast: bool = False
