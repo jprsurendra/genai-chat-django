@@ -116,7 +116,7 @@ It works, but I would not call this solved. "Copy the exact words" is a workarou
 
 ## Part 3: Uploading a real document (PDF / TXT)
 
-Hand-written sentences only get you so far, so the next step was letting the app take an actual file. I used a quiz PDF, `Inter school Quiz Rapid Fire.pdf`. It is a good test file: lots of short, unrelated facts, so it is easy to tell whether an answer is right.
+Hand-written sentences only get you so far, so the next step was letting the app take an actual file. I used a quiz PDF, [`Inter school Quiz Rapid Fire.pdf`](sample_files/Inter%20school%20Quiz%20Rapid%20Fire.pdf). It is a good test file: lots of short, unrelated facts, so it is easy to tell whether an answer is right.
 
 ### How it fits together
 
@@ -187,6 +187,8 @@ And in the chat window:
 [![PDF upload and Q&A](docs/screenshot_003_pdf_upload.png)](docs/screenshot_003_pdf_upload.png)
 
 *Console output on the left, the source PDF and the chat window on the right: [`docs/screenshot_003_pdf_upload.png`](docs/screenshot_003_pdf_upload.png)*
+
+**Try it yourself:** the PDF used in this test is in the repo at [`sample_files/Inter school Quiz Rapid Fire.pdf`](sample_files/Inter%20school%20Quiz%20Rapid%20Fire.pdf). Upload it with the paperclip button and ask the same questions.
 
 It works end to end, and I think the answers really did come from the document. The reply to the second question repeats the PDF's wording almost exactly, including the bracketed part about James Watt. The Prime Minister answer is the more convincing one: a 1.5B model's training data may well predate that fact, so it is unlikely to have known it on its own. Two questions is a very small test, though, so I would not call this proven.
 
