@@ -1,6 +1,6 @@
 # Branch 003: `genai-chat-003-rag` (work in progress)
 
-Until now the chatbot only knew what the model itself knew. In this branch I wanted to give it knowledge of my own, and I did not want to just plug in a framework and call it done. So I went in small steps: first turn text into vectors and look at the numbers, then store a few documents in a local ChromaDB, and finally feed the retrieved text back into the prompt.
+Until now the chatbot only knew what the model itself knew. In this branch I wanted to give it knowledge of my own, and I did not want to just plug in a framework and call it done. So I went in small steps: first turn text into vectors and look at the numbers, then store a few documents in a local ChromaDB, feed the retrieved text back into the prompt, and finally let the app take a real PDF instead of hand-written sentences.
 
 Everything here runs locally on Ollama, same as the earlier branches. The embedding model is `nomic-embed-text`, the chat models are still the small `qwen2.5:1.5b` / `llama3.2:1b`.
 
@@ -114,6 +114,90 @@ I tightened the system prompt to tell the model to read the context carefully an
 
 It works, but I would not call this solved. "Copy the exact words" is a workaround for a small model; a bigger one would not need it.
 
+## Part 3: Uploading a real document (PDF / TXT)
+
+Hand-written sentences only get you so far, so the next step was letting the app take an actual file. I used a quiz PDF, `Inter school Quiz Rapid Fire.pdf`. It is a good test file: lots of short, unrelated facts, so it is easy to tell whether an answer is right.
+
+### How it fits together
+
+1. **Frontend:** a paperclip button in `index.html`. `app.js` sends the chosen file as `FormData` to `/api/upload`.
+2. **Backend:** `UploadDocumentAPIView` receives the file, saves it to a temporary path and hands it to `RAGEngine`.
+3. **Text extraction:** `pypdf` pulls the text out of PDFs.
+4. **Chunking:** `langchain-text-splitters` cuts the text into 500-character chunks with a 50-character overlap.
+5. **Storage:** each chunk is embedded and stored in ChromaDB.
+
+### The test
+
+The upload side of the console, trimmed:
+
+```text
+#3: Full Document Upload (PDF/TXT) ...
+   Uploading file_path: '/tmp/tmp..._Inter school Quiz Rapid Fire.pdf'
+============================================================
+text: 'Rapid Fire Set 1
+
+1. Complete the proverb: It's better to be safe than ______.
+Answer: Sorry
+2. Who wrote the famous book The Guide?
+Answer: R. K. Narayan
+...
+Rapid Fire Set 9
+...
+3. Who is the Prime Minister of the United Kingdom?
+Answer: Keir Starmer
+...
+------------------------------------------------------------
+Successfully uploaded and embedded 17 chunks from the document.
+============================================================
+INFO:  127.0.0.1 - "POST /api/upload HTTP/1.1" 200 OK
+```
+
+Then I asked two questions whose answers are in the PDF. For the first one, this is what retrieval printed (shortened):
+
+```text
+#1. Embeddings Basic Example ...
+   🔍 EMBEDDING SIMILARITY FOR USER INPUT: 'Who is the Prime Minister of the United Kingdom?'
+Similarity with 'मुझे चाय पसंद है': 0.4174
+Similarity with 'I love tea': 0.4046
+Similarity with 'मुझे कॉफ़ी बहुत पसंद है': 0.4317
+Similarity with 'The weather is nice today': 0.4190
+
+#2. Simple Vector Store (Manual)
+   🔍 RETRIEVING FROM VECTOR STORE FOR: 'Who is the Prime Minister of the United Kingdom?'
+Top Matches Found:
+  1. Answer: Arundhati Roy
+3. Who is the Prime Minister of the United Kingdom?
+Answer: Keir Starmer
+4. The steam engine was invented by Albert Einstein. True or False?
+...
+  2. Answer: Arundhati Roy
+3. Who is the Prime Minister of the United Kingdom?
+Answer: Keir Starmer
+...
+```
+
+And in the chat window:
+
+| Step | Message | Reply |
+|------|---------|-------|
+| 1 | (uploaded the PDF) | `Successfully uploaded and embedded 17 chunks from the document.` |
+| 2 | `Who is the Prime Minister of the United Kingdom?` | `The Prime Minister of the United Kingdom is Keir Starmer.` |
+| 3 | `The steam engine was invented by Albert Einstein. True or False?` | `False (It was developed by several inventors, with James Watt making major improvements.)` |
+
+[![PDF upload and Q&A](docs/screenshot_003_pdf_upload.png)](docs/screenshot_003_pdf_upload.png)
+
+*Console output on the left, the source PDF and the chat window on the right: [`docs/screenshot_003_pdf_upload.png`](docs/screenshot_003_pdf_upload.png)*
+
+It works end to end, and I think the answers really did come from the document. The reply to the second question repeats the PDF's wording almost exactly, including the bracketed part about James Watt. The Prime Minister answer is the more convincing one: a 1.5B model's training data may well predate that fact, so it is unlikely to have known it on its own. Two questions is a very small test, though, so I would not call this proven.
+
+### What I noticed in the output
+
+- **Chunks are cut through the middle of questions.** The top match starts at `Answer: Arundhati Roy`, which is the answer to question 2 with its question left behind in the previous chunk. A 500-character window does not respect the quiz structure. Splitting on the question boundaries, or a bigger overlap, would give cleaner chunks.
+- **The two retrieved chunks are almost the same text.** Matches 1 and 2 differ only by a few characters at the start. It could be the overlap, or the same file could have been indexed twice. I have not checked which. If it is the second, uploading the same PDF again will keep adding duplicates unless chunk IDs are made deterministic.
+- **Top-k is still wasted on near-duplicates.** Here the second slot added nothing new. The minimum-score idea from Part 2 does not help with this; removing duplicates does.
+- **The `#1. Embeddings Basic Example` block still runs on every question.** It compares each query with the four old tea and weather sentences. It is just leftover demo output now and should be removed.
+- **Only English was tested.** The same PDF has a Hindi question in Set 10 (a proverb with the answer `चुहिया`). Given how Test 2 in Part 2 went, I expect that one to be harder.
+
 ---
 
 ## What I learned
@@ -122,6 +206,8 @@ It works, but I would not call this solved. "Copy the exact words" is a workarou
 2. **Cross-language similarity exists but is weak.** `मुझे चाय पसंद है` vs `I love tea` scored 0.4186, which is barely above the "unrelated" floor seen above. Same-language pairs scored much higher even when unrelated. So I would not rely on this model for Hindi-to-English retrieval.
 3. **Retrieval and generation fail independently.** Test 1 had correct retrieval and a wrong answer. Test 2 had correct retrieval, correct prompt, and still a wrong answer. Debug them one at a time.
 4. **Small models are the weak link.** RAG hands the model the right text, but the model still has to read it. For reliable Hindi output, a bigger model (8B or more) is worth trying.
+5. **Chunking is as important as the embedding model.** Chunks that cut a question from its answer make retrieval worse no matter how good the vectors are.
+6. **Look at what retrieval returns, not only at the final answer.** The Part 3 answers were right, but the printed matches showed near-duplicate chunks that I would never have noticed from the chat window alone.
 
 ---
 
@@ -131,8 +217,11 @@ It works, but I would not call this solved. "Copy the exact words" is a workarou
 - [ ] **Minimum score.** Drop retrieved documents below a threshold instead of always passing top-k to the prompt.
 - [ ] **Distance metric.** ChromaDB defaults to L2 distance. If I want cosine, I should set it explicitly on the collection and make sure I am reading distances, not similarities.
 - [ ] **A multilingual embedding model.** Compare against one and see whether the Hindi results improve.
-- [ ] **Document upload.** An API endpoint and a UI button for PDF and text files.
-- [ ] **Chunking.** A text splitter so large documents are broken into smaller pieces before embedding.
+- [x] **Document upload.** An API endpoint and a UI button for PDF and text files (Part 3).
+- [x] **Chunking.** A text splitter so large documents are broken into smaller pieces before embedding (Part 3).
+- [ ] **Better chunk boundaries.** Split on structure (for example one question and its answer) instead of a fixed 500 characters.
+- [ ] **Duplicate uploads.** Check whether the same file gets indexed twice, and use deterministic chunk IDs if it does.
+- [ ] **Upload UX.** A loading spinner while the file is processed, and a list of uploaded files.
 - [ ] **Chat history embedding.** Let the assistant recall earlier sessions.
 
 ---
@@ -165,6 +254,13 @@ It works, but I would not call this solved. "Copy the exact words" is a workarou
 **सीख**
 
 RAG model को सही text दे देता है, लेकिन उसे पढ़ना फिर भी model को ही पड़ता है। Retrieval और generation अलग-अलग जगह fail हो सकते हैं, इसलिए debug भी एक-एक करके करें। Hindi के भरोसेमंद output के लिए बड़ा model (8B या उससे ऊपर) आज़माना चाहिए।
+
+**Part 3: PDF upload**
+
+- अब app में paperclip button से PDF/TXT upload हो सकता है। Backend `pypdf` से text निकालता है, उसे 500-character के chunks में बाँटता है (50 characters का overlap) और हर chunk को embed करके ChromaDB में रखता है।
+- मैंने `Inter school Quiz Rapid Fire.pdf` upload की और console में लिखा आया: **17 chunks** embed हुए।
+- UK के Prime Minister वाले सवाल का जवाब सही आया (**Keir Starmer**), और steam engine वाले सवाल का भी (**False**), और वह भी PDF वाले wording में ही। छोटा model शायद यह current fact खुद से नहीं जानता, इसलिए मुझे लगता है कि जवाब document से ही आया। पर सिर्फ़ दो सवाल पूछे हैं, इसलिए इसे पक्का सबूत नहीं मानता।
+- Console में दो बातें खटकीं: chunks सवाल के बीच से कट जाते हैं (जैसे top match `Answer: Arundhati Roy` से शुरू होता है, उसका सवाल पिछले chunk में रह गया), और दोनों top matches लगभग एक ही text हैं। आगे यह देखना है कि कहीं एक ही file दो बार तो index नहीं हो रही।
 
 </details>
 
