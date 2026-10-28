@@ -157,3 +157,49 @@ This branch was dedicated to understanding how the `SYSTEM_PROMPT` drastically c
 2. **Keep Prompts Separate:** If you want math, just say `"Calculate 2+2"`. If you want to set a name, say `"My name is SSR."` in a separate message.
 3. **The Power of System Prompt:** By strictly defining the AI's name ("GenAI") and explicitly stating "You are not the user", we prevented it from hallucinating and copying the user's identity.
 4. **Know your model:** If you need complex reasoning and identity handling, 1.5B parameters might not be enough. Switch to `llama3.1:8b` in your `.env` file for a much smarter experience!
+
+
+
+
+### The Ultimate Conclusion: Why we need Bigger Models
+
+Through multiple iterations, we realized a hard truth about Small Language Models (SLMs): **No amount of System Prompt engineering can fully fix "Theory of Mind" in a 1.5B parameter model.**
+
+Small models simply do not have the cognitive capacity to consistently separate their identity from the user, or to parse complex, messy human prompts. 
+
+**The Solution:**
+Since we are using **Ollama**, we don't need to change a single line of our Django code. We simply pulled a larger model:
+```bash
+ollama pull llama3.1:8b
+
+### Managing RAM with Local LLMs
+
+While larger models like `llama3.1:8b` provide significantly better reasoning and identity handling, they consume a lot of RAM (4.7 GB+). If you are running other applications (like VS Code or a browser), your system might slow down.
+
+**How to handle this:**
+1. **Unload after testing:** Run `ollama stop llama3.1:8b` to instantly free up the RAM.
+2. **Use the Fast/Quality toggle:** Keep `qwen2.5:1.5b` as your `FAST` model for daily use, and switch to `llama3.1:8b` (Main) only when complex reasoning is needed.
+3. **Auto-timeout:** Configure `OLLAMA_KEEP_ALIVE=30s` in your `.env` to automatically unload the model from RAM after 30 seconds of inactivity.
+
+<details>
+<summary><b>🇮🇳 हिंदी में समझें (Click to expand Hindi Explanation) - Iteration 4 & 5</b></summary>
+
+<br>
+
+**इटरेशन 4: आखिरी समाधान (पहचान और व्यक्तित्व)**
+
+*   **System Prompt में जोड़ा गया:** *"You are a helpful AI named 'GenAI'. You are NOT the user. If asked, reply 'You are [Name]'."*
+*   **परिणाम:** 
+    *   `I am SSR, 2+2?` → "You are 4" *(मॉडल थोड़ा कन्फ्यूज हो गया और उसने नाम और मैथ को एक साथ मिलाकर आपको ही गणित का जवाब मान लिया!)*
+    *   `Who am I?` → **"You are SSR."** (बिल्कुल सही पहचान!)
+
+**इटरेशन 5: सीमा का एहसास (छोटे मॉडल्स का सच)**
+
+कई बार प्रयास करने के बाद हमने एक कड़वी सच्चाई महसूस की: **छोटे भाषा मॉडल्स (SLMs - जैसे 1.5B) में "Theory of Mind" (दूसरों की भावनाओं और पहचान को समझने की क्षमता) की कमी को सिर्फ System Prompt बदलकर ठीक नहीं किया जा सकता।**
+
+छोटे मॉडल्स में यह क्षमता ही नहीं होती कि वे लगातार अपनी पहचान को यूज़र से अलग रख सकें या जटिल मानवीय वाक्यों को सही से समझ सकें।
+
+**समाधान (बड़े मॉडल का उपयोग):**
+चूँकि हम **Ollama** का उपयोग कर रहे हैं, इसलिए हमें अपने Django कोड की एक भी लाइन बदलने की ज़रूरत नहीं है। हमने बस एक बड़ा मॉडल डाउनलोड किया:
+```bash
+ollama pull llama3.1:8b
