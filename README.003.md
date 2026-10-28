@@ -50,28 +50,61 @@ To store manual documents in a local Vector Database (ChromaDB) and retrieve the
 3. **Augment:** The retrieved document is injected into the `SYSTEM_PROMPT` in `_build_messages()`.
 4. **Generate:** The LLM uses this context to generate an accurate answer.
 
-#### The "Delhi" Test & The Hallucination
+#### Test 1: The "Delhi" Test (Before Augmentation)
 
-When we asked **"Delhi कहाँ है?"** without RAG, the small model (1.5B) hallucinated and answered: *"Delhi अमेरिका में है।"* (Delhi is in America). 
+When we asked **"Delhi कहाँ है?"**, our `RAGEngine` successfully retrieved the correct data from the Vector Store, but the final LLM response was wrong because we had not injected the context into the prompt yet.
 
-After integrating ChromaDB and injecting the context, the retrieval system successfully found: *"Delhi भारत की राजधानी है।"* 
+- **User:** `Delhi कहाँ है?`
+- **Chat Response:** *"Delhi अमेरिका में है।"* (Delhi is in America) ❌
 
-**The "Hertz" Hallucination (Model Limitation):**
-Even after providing the correct context, we encountered a funny hallucination. The AI generated:
-> **"Delhi हार्ट्ज की राजधानी है।"** (Delhi is the capital of Hertz).
+**Console Output:**
+
+```text
+============================================================
+#1. Embeddings Basic Example ...
+   🔍 EMBEDDING SIMILARITY FOR USER INPUT: 'Delhi कहाँ है?'
+============================================================
+Similarity with 'मुझे चाय पसंद है': 0.6879
+Similarity with 'I love tea': 0.4078
+Similarity with 'मुझे कॉफ़ी बहुत पसंद है': 0.6931
+Similarity with 'The weather is nice today': 0.4133
+============================================================
+
+============================================================
+#2. Simple Vector Store (Manual)
+   🔍 RETRIEVING FROM VECTOR STORE FOR: 'Delhi कहाँ है?'
+============================================================
+Top Matches Found:
+  1. Delhi भारत की राजधानी है।
+  2. Python एक programming language है।
+============================================================
+```
+
+> **Note:** The console proves the retrieval worked (`Delhi भारत की राजधानी है।` was the top match). The small model still hallucinated because we only printed the retrieved data in the console and did not pass it to the AI.
+
+#### Test 2: The "Hertz" Hallucination (Model Limitation)
+
+After updating `_build_messages()` to inject the retrieved context into the prompt, we encountered a funny hallucination. The AI generated:
+
+> **"Delhi हार्ट्ज की राजधानी है।"** (Delhi is the capital of Hertz)
 
 **Why did this happen?**
-Our RAG engine successfully retrieved the exact text ("Delhi भारत की राजधानी है।"). However, the small language model failed to read the word "भारत" (Bharat) correctly and hallucinated "हार्ट्ज" (Hertz) due to its limited vocabulary and tokenizer. 
 
-**The Final Fix:**
-We updated the System Prompt to be stricter, instructing the model to *"Read the following context carefully and copy the exact words"*. 
+Our RAG engine successfully retrieved the exact text (`Delhi भारत की राजधानी है।`). However, the small language model failed to read the word "भारत" (Bharat) correctly and hallucinated "हार्ट्ज" (Hertz) due to its limited vocabulary and tokenizer.
+
+#### Test 3: The Final Fix (Success! ✅)
+
+We updated the System Prompt to be stricter, instructing the model to *"Read the following context carefully and copy the exact words"*.
 
 **Final Result:**
+
 - **User Query:** `Delhi कहाँ है?`
 - **Vector Store Retrieval:** `"Delhi भारत की राजधानी है।"`
 - **LLM Output:** **"Delhi भारत की राजधानी है।"** (No hallucination!)
 
-*(Screenshot: `docs/screenshot_003_rag.png`)*
+[![RAG final result](docs/screenshot_003_rag.png)](docs/screenshot_003_rag.png)
+
+*Screenshot: final RAG result — [`docs/screenshot_003_rag.png`](docs/screenshot_003_rag.png)*
 
 ---
 
@@ -106,6 +139,7 @@ RAG (Retrieval-Augmented Generation) को गहराई से समझन�
 
 **भाग 2: Vector Store और RAG Integration**
 - **RAG का जादू:** जब हमने पूछा **"Delhi कहाँ है?"**, तो RAG से पहले AI ने गलत बोला *"Delhi अमेरिका में है"*।
+- **कंसोल का सबूत:** कंसोल में Top Match `Delhi भारत की राजधानी है।` दिखा, यानी retrieval सही था। लेकिन शुरुआत में हमने यह data सिर्फ़ कंसोल में print किया था, AI को नहीं दिया था, इसलिए जवाब गलत आया।
 - **डेटाबेस में सेव करने के बाद:** हमने ChromaDB में *"Delhi भारत की राजधानी है"* सेव किया। जब यूज़र ने सवाल पूछा, तो सिस्टम ने सही डॉक्यूमेंट ढूँढ निकाला और AI को दिया।
 - **"हार्ट्ज" वाली मज़ेदार गलती:** छोटे मॉडल ने "भारत" को पढ़ने के बजाय "हार्ट्ज" (Hertz) लिख दिया। 
 - **समाधान:** हमने Prompt को सख्त किया और AI ने आखिरकार सही जवाब दिया: **"Delhi भारत की राजधानी है।"**
@@ -114,7 +148,6 @@ RAG (Retrieval-Augmented Generation) को गहराई से समझन�
 RAG सही कॉन्टेक्स्ट देता है, लेकिन उसे सही से पढ़ने के लिए बड़े मॉडल (जैसे 8B) की ज़रूरत होती है। छोटे मॉडल्स (1.5B) कभी-कभी शब्दों को गलत पढ़ सकते हैं।
 
 </details>
-
 
 ---
 
@@ -155,5 +188,3 @@ Whenever a user asks a question, the `RAGEngine` queries this database. ChromaDB
 - **डेटा रीसेट कैसे करें:** अगर आप AI की मेमोरी साफ करना चाहते हैं, तो सर्वर बंद करें, इस फोल्डर को डिलीट करें, और सर्वर दोबारा चालू करें। ChromaDB अपने आप एक नया खाली डेटाबेस बना लेगा।
 
 </details>
-
----
