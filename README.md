@@ -449,8 +449,8 @@ Each branch builds on the previous one. This section records **what changed in e
 | Branch | Status | Summary |
 |--------|--------|---------|
 | `genai-chat-001-basic` | ✅ Done | Basic streaming chatbot (Django + DRF + Ollama) |
-| `genai-chat-002-system-prompt` | 🚧 In progress | Investigate and improve the system prompt |
-
+| `genai-chat-002-system-prompt` | ✅ Done | Improved system prompt and fixed identity confusion |
+| `genai-chat-003-rag` | ✅ Done | Implemented Embeddings, ChromaDB, PDF upload, and Chat Memory (RAG) |
 ---
 
 ### Branching Strategy & Git Workflow

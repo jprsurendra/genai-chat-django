@@ -1,4 +1,4 @@
-# Branch 003: `genai-chat-003-rag` (work in progress)
+# Branch 003: `genai-chat-003-rag`
 
 Until now the chatbot only knew what the model itself knew. In this branch I wanted to give it knowledge of my own, and I did not want to just plug in a framework and call it done. So I went in small steps: first turn text into vectors and look at the numbers, then store a few documents in a local ChromaDB, feed the retrieved text back into the prompt, and finally let the app take a real PDF instead of hand-written sentences.
 
