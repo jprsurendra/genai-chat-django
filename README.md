@@ -510,7 +510,7 @@ git tag -a v0.1.0 -m "genai-chat-001-basic"
 git push origin v0.1.0
 ```
 
-#### 🧹 Cleanup after merge
+#### 6. 🧹 Cleanup after merge (Optional)
 
 Once merged, the feature branch is no longer needed.
 
@@ -539,7 +539,7 @@ git push -u origin genai-chat-002-system-prompt
 
 ---
 
-### `genai-chat-001-basic` ✅
+### Branch 001: `genai-chat-001-basic` ✅
 
 **Goal:** Build a minimal, fully local chatbot.
 
@@ -550,25 +550,13 @@ git push -u origin genai-chat-002-system-prompt
 - Bootstrap 5 chat UI with markdown rendering, multi-turn history and a fast/quality model selector
 - Per-IP in-memory rate limiting (20 requests / 60 seconds)
 
-**Issue found during testing**
+[![Testing of Branch-001](docs/screenshot_001.png)](docs/screenshot_001.png)
 
-With the small local models (`qwen2.5:1.5b`, `llama3.2:1b`), an ambiguous prompt confused the model:
-
-| # | User message | Model behaviour |
-|---|--------------|-----------------|
-| 1 | `I am SSR, 2+2?` | Ignored the math and invented a story about "SSR" being a Russian military unit |
-| 2 | `I am SSR. 2+2?` | Repeated the same wrong "SSR" explanation |
-| 3 | `My name is SSR. and i want do calculate by you 2+2` | Correct: `The answer to 2+2 is 4.` |
-
-**Takeaways**
-
-- Small models (1B–1.5B parameters) are easily distracted by names and abbreviations in short, ambiguous prompts.
-- They predict the next token; they do not reliably calculate. Clear, complete prompts give far better results.
-- The current system prompt gives the model no guidance on how to prioritise the user's actual question. This is addressed in the next branch.
+*Testing of Branch-001 — [`docs/screenshot_001.png`](docs/screenshot_001.png)*
 
 ---
 
-### `genai-chat-002-system-prompt` 🚧
+### Branch 002: `genai-chat-002-system-prompt` 🚧
 
 **Goal:** Understand how the system prompt affects model behaviour and make answers more reliable without changing the model.
 
@@ -580,6 +568,34 @@ With the small local models (`qwen2.5:1.5b`, `llama3.2:1b`), an ambiguous prompt
 - Optionally compare against a larger model (e.g. `llama3.1:8b`) if RAM allows
 
 **Changes made:** _to be filled in as the branch progresses._
+
+
+**Issue found during testing of branch 001**
+
+With the small local models (`qwen2.5:1.5b`, `llama3.2:1b`), an ambiguous prompt confused the model:
+
+| # | User message | Model behaviour |
+|---|--------------|-----------------|
+| 1 | `I am SSR, 2+2?` | Ignored the math and invented a story about "SSR" being a Russian military unit |
+| 2 | `I am SSR. 2+2?` | Repeated the same wrong "SSR" explanation |
+| 3 | `My name is SSR. and i want do calculate by you 2+2` | Correct: `The answer to 2+2 is 4.` |
+
+
+[![Issue found during Testing Branch 001](docs/screenshot_002.png)](docs/screenshot_002.png)
+
+*Screenshot (Issue found during Testing Branch 001): small model confused by `I am SSR, 2+2?` — [`docs/screenshot_002.png`](docs/screenshot_002.png)*
+**Deep Dive into Model Behavior (Screenshot Analysis)**
+
+This screenshot is a perfect example of the difference between small local AI models (like `qwen2.5:1.5b` or `llama3.2:1b`) and large models (like ChatGPT-4). Here is an analysis of what happened:
+
+**Takeaways**
+
+- Small models (1B–1.5B parameters) are easily distracted by names and abbreviations in short, ambiguous prompts.
+- They predict the next token; they do not reliably calculate. Clear, complete prompts give far better results.
+- The current system prompt gives the model no guidance on how to prioritise the user's actual question. This is addressed in the next branch.
+
+
+📄 **[Click here to read the detailed analysis for Branch 002 (README.002.md)](README.002.md)**
 
 ---
 
