@@ -65,12 +65,11 @@ class ChatAPIView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         # ==========   Trigger the debug print for embeddings   ==========
-        sentences = [   "मुझे चाय पसंद है",
-                        "I love tea",
-                        "मुझे कॉफ़ी बहुत पसंद है",
-                        "The weather is nice today" ]
-        self.llm_service.debug_embeddings(req.message, sentences)
-        # ========== ========== ========== ========== ========== ==========
+        self.llm_service.debug_embeddings(req.message)
+        # ========== ========== Test the Vector Store ========== ==========
+        self.llm_service.test_manual_vector_store(req.message)
+        # ===========================================
+
         return self.generate_post_response(req)
 
     def _client_ip(self, request) -> str:
