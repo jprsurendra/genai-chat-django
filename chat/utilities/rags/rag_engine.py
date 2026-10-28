@@ -58,7 +58,7 @@ class RAGEngine:
         )
         print(f"✅ Successfully stored {len(documents)} documents in Vector Store.")
 
-    def retrieve_similar(self, query: str, top_k: int = 2):
+    def retrieve_similar_old(self, query: str, top_k: int = 2):
         """
         Retrieves the top_k most similar documents from the Vector Store.
         """
@@ -71,6 +71,31 @@ class RAGEngine:
         if results and results["documents"]:
             return results["documents"][0]
         return []
+
+    def retrieve_similar(self, query: str, top_k: int = 3):
+        """
+        Retrieves the top_k most similar documents, filtering out previous questions.
+        """
+        # Fetch a larger pool of results to filter from
+        results = self.collection.query(
+            query_texts=[query],
+            n_results=10  # Get 10 results
+        )
+
+        filtered_docs = []
+        if results and results["documents"]:
+            for doc in results["documents"][0]:
+                # Filter out the previous questions
+                # If the text ends with "?" and starts with "User:", ignore it
+                if doc.startswith("User:") and doc.strip().endswith("?"):
+                    continue
+                filtered_docs.append(doc)
+
+                # Stop when we have enough results
+                if len(filtered_docs) >= top_k:
+                    break
+
+        return filtered_docs
 
     def process_and_store_file(self, file_path: str):
         """

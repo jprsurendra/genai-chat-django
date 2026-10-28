@@ -200,6 +200,52 @@ It works end to end, and I think the answers really did come from the document. 
 - **The `#1. Embeddings Basic Example` block still runs on every question.** It compares each query with the four old tea and weather sentences. It is just leftover demo output now and should be removed.
 - **Only English was tested.** The same PDF has a Hindi question in Set 10 (a proverb with the answer `चुहिया`). Given how Test 2 in Part 2 went, I expect that one to be harder.
 
+## Part 4: Chat history embedding (AI memory)
+
+So far the assistant forgot everything the moment the page was refreshed. The goal of this part was to give it a memory that survives a refresh or a brand new session, using the same ChromaDB setup as the documents.
+
+### How it works
+
+1. **Auto-save:** every time I send a message or the AI replies, `LLMService` stores that text in ChromaDB.
+2. **Retrieval:** when a new question comes in, the RAG engine pulls related past messages and adds them to the prompt as context.
+3. **Filtering questions:** retrieval skips any stored text that ends with `?`. Without this, the AI kept mixing up my old questions with facts about me.
+
+### The "identity crisis" journey
+
+Memory turned out to be much harder than documents. A quiz PDF is full of neutral facts; chat history is full of "I", "you" and "my", and a 1.5B model gets those wrong easily. The screenshot below shows the whole sequence, with the early failures at the top and the final working result at the bottom.
+
+[![Chat history embedding, before and after](docs/screenshot_003_004.png)](docs/screenshot_003_004.png)
+
+*Top: the early bugs, including the "I am SSR" answer. Bottom: the final result, where the AI remembers the colour blue: [`docs/screenshot_003_004.png`](docs/screenshot_003_004.png)*
+
+**Attempt 1: "I am SSR"**
+
+I asked `What is my favorite color?` and got back something like *"I am SSR, and I do not have the capability to determine my favorite color..."*. The model took the user's identity for itself, the same kind of mix-up as in the system prompt iterations of Branch 002. The retrieved context contained the right information; the model just could not tell whose it was.
+
+**Attempt 2: the "You are the User" loop**
+
+I made the system prompt stricter so the model would say "You are the User". It overcorrected. It answered *"You are the User"* to practically everything and ignored the retrieved context.
+
+**Attempt 3: a balanced prompt and cleaner retrieval (worked)**
+
+Two changes together fixed it:
+
+- The prompt now says, in plain words, that when the user says "my" they mean themselves and not the AI.
+- Retrieval ignores previously stored questions, so only statements like `My favorite color is blue` reach the model.
+
+**Final result**
+
+- **User (after a refresh):** `What is my favorite color?`
+- **AI:** *"You are the User. Your favorite color is blue."*
+
+It is correct, and it survived a page refresh. The opening "You are the User" is clunky, a leftover from the prompt wording; I would still like to get rid of it.
+
+### What I want to keep an eye on
+
+- **The `?` filter is a blunt tool.** It misses questions typed without a question mark, and it may behave differently with Hindi text. It was enough to get this test working, but it is a heuristic, not a real solution.
+- **The AI's own replies are saved too.** If the model says something wrong, that wrong answer goes into memory and can be retrieved later as if it were a fact. I have not tested this yet, but the "I am SSR" kind of reply is exactly what I would not want stored.
+- **Memory is as persistent as the documents.** It lives in the same `chroma_db` folder, so deleting that folder wipes the AI's memory as well (see the last section).
+
 ---
 
 ## What I learned
@@ -210,6 +256,8 @@ It works end to end, and I think the answers really did come from the document. 
 4. **Small models are the weak link.** RAG hands the model the right text, but the model still has to read it. For reliable Hindi output, a bigger model (8B or more) is worth trying.
 5. **Chunking is as important as the embedding model.** Chunks that cut a question from its answer make retrieval worse no matter how good the vectors are.
 6. **Look at what retrieval returns, not only at the final answer.** The Part 3 answers were right, but the printed matches showed near-duplicate chunks that I would never have noticed from the chat window alone.
+7. **Pronouns are a trap for small models.** "I", "you" and "my" in retrieved chat history confuse a 1.5B model badly. Clear roles in the system prompt help, but a prompt that is too strict backfires (the "You are the User" loop).
+8. **Do not store everything and retrieve everything.** Filtering what comes back (here, old questions) made a bigger difference than any wording change in the prompt.
 
 ---
 
@@ -224,7 +272,8 @@ It works end to end, and I think the answers really did come from the document. 
 - [ ] **Better chunk boundaries.** Split on structure (for example one question and its answer) instead of a fixed 500 characters.
 - [ ] **Duplicate uploads.** Check whether the same file gets indexed twice, and use deterministic chunk IDs if it does.
 - [ ] **Upload UX.** A loading spinner while the file is processed, and a list of uploaded files.
-- [ ] **Chat history embedding.** Let the assistant recall earlier sessions.
+- [x] **Chat history embedding.** Let the assistant recall earlier sessions (Part 4).
+- [ ] **Smarter memory filter.** Replace the `?` check with something sturdier, and decide whether the AI's own replies should be stored at all.
 
 ---
 
@@ -263,6 +312,13 @@ RAG model को सही text दे देता है, लेकिन उ�
 - मैंने `Inter school Quiz Rapid Fire.pdf` upload की और console में लिखा आया: **17 chunks** embed हुए।
 - UK के Prime Minister वाले सवाल का जवाब सही आया (**Keir Starmer**), और steam engine वाले सवाल का भी (**False**), और वह भी PDF वाले wording में ही। छोटा model शायद यह current fact खुद से नहीं जानता, इसलिए मुझे लगता है कि जवाब document से ही आया। पर सिर्फ़ दो सवाल पूछे हैं, इसलिए इसे पक्का सबूत नहीं मानता।
 - Console में दो बातें खटकीं: chunks सवाल के बीच से कट जाते हैं (जैसे top match `Answer: Arundhati Roy` से शुरू होता है, उसका सवाल पिछले chunk में रह गया), और दोनों top matches लगभग एक ही text हैं। आगे यह देखना है कि कहीं एक ही file दो बार तो index नहीं हो रही।
+
+**Part 4: Chat history memory**
+
+- अब हर message (मेरा और AI का) ChromaDB में save होता है, इसलिए page refresh करने या नया session शुरू करने के बाद भी AI पुरानी बातें याद रख सकता है।
+- शुरू में छोटे model ने "I", "you", "my" में गड़बड़ की। एक बार उसने कहा *"I am SSR..."*, और prompt ज़्यादा सख़्त करने पर वह हर जवाब में सिर्फ़ *"You are the User"* दोहराने लगा।
+- दो चीज़ों ने इसे ठीक किया: prompt में साफ़ लिखना कि "my" का मतलब user है, AI नहीं, और retrieval में पुराने सवाल (जो `?` पर ख़त्म होते हैं) हटा देना। अब refresh के बाद जवाब आता है: **"You are the User. Your favorite color is blue."**
+- ध्यान रखने वाली बातें: `?` वाला filter मोटा तरीका है, और AI के अपने गलत जवाब भी memory में जा सकते हैं।
 
 </details>
 

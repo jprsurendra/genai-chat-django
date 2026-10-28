@@ -15,9 +15,7 @@ class LLMService:
 
     def __init__(self):
         """
-        Constructor: Initializes the OpenAI client, RAG Engine and sets the default model.
-        Since this is called once when the class is instantiated,
-        we don't waste resources creating a new client on every request.
+        Constructor: Initializes the OpenAI client and RAG Engine.
         """
         self.client, self.default_model = self._create_client()
         # Initializes RAG Engine
@@ -47,25 +45,13 @@ class LLMService:
             return settings.OLLAMA_MODEL_FAST
         return self.default_model
 
-    def _build_messages_old(self, user_message: str, history: list[ChatMessage]) -> list[dict]:
-        """
-        Private method to build the payload for the LLM.
-        It combines the System Prompt, the last 10 turns of history, and the new user message.
-        """
-        messages = [{"role": "system", "content": settings.SYSTEM_PROMPT}]
-        # Keep only the last 10 messages to control token usage
-        for m in history[-10:]:
-            messages.append({"role": m.role, "content": m.content})
-        messages.append({"role": "user", "content": user_message})
-        return messages
-
     def _build_messages(self, user_message: str, history: list[ChatMessage]) -> list[dict]:
         """
         Private method to build the payload for the LLM.
         It combines the System Prompt, the RAG context, the last 10 turns of history, and the new user message.
         """
         # 1. Retrieve context from Vector Store (RAG)
-        retrieved_docs = self.rag_engine.retrieve_similar(user_message, top_k=2)
+        retrieved_docs = self.rag_engine.retrieve_similar(user_message, top_k=3)
 
         # <--- DEBUG PRINT --->
         print("\n" + "=" * 50)
@@ -130,7 +116,7 @@ class LLMService:
         )
         reply_text =  resp.choices[0].message.content or ""
 
-        # Save to Vector DB for future RAG
+        # Save both the user's message and AI's reply to the Vector Store
         self.rag_engine.store_chat_message("User", user_message)
         if reply_text:
             self.rag_engine.store_chat_message("AI", reply_text)
@@ -158,6 +144,7 @@ class LLMService:
         async for chunk in stream:
             delta = chunk.choices[0].delta.content or ""
             if delta:
+                full_reply += delta
                 yield delta
 
         # After the stream finishes, save the full AI reply
@@ -167,13 +154,14 @@ class LLMService:
     # def debug_embeddings(self, user_message: str, sentences: list[str]):
     def debug_embeddings(self, user_message: str):
         """
-        Educational print statements to show how embeddings work in the terminal.
+        Educational print statements to show how embeddings work.
         """
-        # Argument 'sentences' : These sentences are intentionally in Hindi and English to test cross-language similarity
-        sentences = ["मुझे चाय पसंद है",
-                     "I love tea",
-                     "मुझे कॉफ़ी बहुत पसंद है",
-                     "The weather is nice today"]
+        sentences = [
+            "मुझे चाय पसंद है",
+            "I love tea",
+            "मुझे कॉफ़ी बहुत पसंद है",
+            "The weather is nice today"
+        ]
         print("\n" + "=" * 60)
         print(f"#1. Embeddings Basic Example ...")
         print(f"   🔍 EMBEDDING SIMILARITY FOR USER INPUT: '{user_message}'")
