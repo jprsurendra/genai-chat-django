@@ -2,6 +2,8 @@ from openai import AsyncOpenAI
 from django.conf import settings
 from chat.dtos import ChatMessage
 
+from chat.utilities.rags.rag_engine import RAGEngine
+
 class LLMService:
     """
     A Service class to handle all interactions with the Large Language Model (LLM).
@@ -13,11 +15,13 @@ class LLMService:
 
     def __init__(self):
         """
-        Constructor: Initializes the OpenAI client and sets the default model.
+        Constructor: Initializes the OpenAI client, RAG Engine and sets the default model.
         Since this is called once when the class is instantiated,
         we don't waste resources creating a new client on every request.
         """
         self.client, self.default_model = self._create_client()
+        # Initializes RAG Engine
+        self.rag_engine = RAGEngine()
 
     def _create_client(self) -> tuple[AsyncOpenAI, str]:
         """
@@ -88,3 +92,21 @@ class LLMService:
             delta = chunk.choices[0].delta.content or ""
             if delta:
                 yield delta
+
+    def debug_embeddings(self, user_message: str, sentences: list[str]):
+        """
+        Educational print statements to show how embeddings work in the terminal.
+        # Argument 'sentences' : These sentences are intentionally in Hindi and English to test cross-language similarity
+        """
+
+        print("\n" + "=" * 60)
+        print(f"🔍 EMBEDDING SIMILARITY FOR USER INPUT: '{user_message}'")
+        print("=" * 60)
+
+        for s in sentences:
+            score = self.rag_engine.calculate_similarity(user_message, s)
+            print(f"Similarity with '{s}': {score:.4f}")
+
+        print("=" * 60 + "\n")
+
+    # ... (Keep your existing methods below: _resolve_model, _build_messages, generate_reply, stream_reply)
