@@ -67,6 +67,17 @@ class LLMService:
         # 1. Retrieve context from Vector Store (RAG)
         retrieved_docs = self.rag_engine.retrieve_similar(user_message, top_k=2)
 
+        # <--- DEBUG PRINT --->
+        print("\n" + "=" * 50)
+        print(f"🔍 RAG DEBUG FOR: '{user_message}'")
+        if retrieved_docs:
+            for i, doc in enumerate(retrieved_docs):
+                print(f"  Match {i + 1}: {doc}")
+        else:
+            print("  ❌ NO CONTEXT FOUND!")
+        print("=" * 50 + "\n")
+        # <--- END DEBUG --->
+
         # 2. Build the System Prompt with Context
         system_content = settings.SYSTEM_PROMPT
 
@@ -80,10 +91,17 @@ class LLMService:
 
         if retrieved_docs:
             context_text = "\n".join(retrieved_docs)
-            # Make the instruction stricter
+            # # Make the instruction stricter
+            # system_content += (
+            #     f"\n\nCRITICAL INSTRUCTION: Read the following context carefully and copy the exact words to answer the user. "
+            #     f"Do NOT change any names or places.\n"
+            #     f"--- CONTEXT START ---\n{context_text}\n--- CONTEXT END ---"
+            # )
+            # Update the instruction to be crystal clear (Ref: screenshot_003_004.png)
             system_content += (
-                f"\n\nCRITICAL INSTRUCTION: Read the following context carefully and copy the exact words to answer the user. "
-                f"Do NOT change any names or places.\n"
+                f"\n\nIMPORTANT: You are an AI assistant. The following context contains previous conversations. "
+                f"When the user asks about 'my' (e.g., 'my favorite color'), they are referring to themselves (the User), NOT you (the AI). "
+                f"Read the context carefully to find the user's personal details and answer accordingly.\n"
                 f"--- CONTEXT START ---\n{context_text}\n--- CONTEXT END ---"
             )
 

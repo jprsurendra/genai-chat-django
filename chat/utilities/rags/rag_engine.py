@@ -128,11 +128,16 @@ class RAGEngine:
         import uuid
         doc_id = str(uuid.uuid4())
 
+        # Check if the message is a question or a statement
+        is_question = content.strip().endswith("?")
+        msg_type = "question" if is_question else "statement"
+
         # We format the text so it's clear who said what
         formatted_text = f"{role.capitalize()}: {content}"
 
         self.collection.add(
             documents=[formatted_text],
             ids=[doc_id],
-            metadatas=[{"role": role, "type": "chat_history"}]  # Metadata for filtering later
+            # metadatas=[{"role": role, "type": "chat_history"}]  # Metadata for filtering later
+            metadatas=[{"role": role, "type": msg_type}]  # Save the type
         )
