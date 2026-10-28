@@ -4,6 +4,8 @@ const input     = document.getElementById("userInput");
 const sendBtn   = document.getElementById("sendBtn");
 const clearBtn  = document.getElementById("clearBtn");
 const modelSel  = document.getElementById("modelSelect");
+const uploadBtn = document.getElementById("uploadBtn");
+const fileUpload = document.getElementById("fileUpload");
 
 let history = [];
 let isBusy = false;
@@ -129,6 +131,55 @@ form.addEventListener("submit", async (e) => {
   } finally {
     isBusy = false;
     sendBtn.disabled = false;
+    input.focus();
+  }
+});
+
+// ---- Document upload (PDF / TXT) ----
+const ALLOWED_EXT = [".pdf", ".txt"];
+
+uploadBtn.addEventListener("click", () => {
+  if (isBusy) return;
+  fileUpload.click();
+});
+
+fileUpload.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file || isBusy) return;
+
+  const name = file.name.toLowerCase();
+  if (!ALLOWED_EXT.some((ext) => name.endsWith(ext))) {
+    addMessage("assistant", `Only ${ALLOWED_EXT.join(" and ")} files are supported.`);
+    fileUpload.value = "";
+    return;
+  }
+
+  isBusy = true;
+  sendBtn.disabled = true;
+  uploadBtn.disabled = true;
+
+  addMessage("user", `📎 ${file.name}`);
+  const bubble = addMessage("assistant", "Uploading and indexing document...", true);
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const resp = await fetch("/api/upload", { method: "POST", body: formData });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || data.error || `Upload failed (${resp.status})`);
+
+    bubble.classList.remove("typing");
+    bubble.innerHTML = renderMarkdown(data.message || "Document uploaded.");
+  } catch (err) {
+    bubble.classList.remove("typing");
+    bubble.classList.add("error");
+    bubble.textContent = `Error: ${err.message}`;
+  } finally {
+    fileUpload.value = "";          // allow re-uploading the same file
+    isBusy = false;
+    sendBtn.disabled = false;
+    uploadBtn.disabled = false;
     input.focus();
   }
 });

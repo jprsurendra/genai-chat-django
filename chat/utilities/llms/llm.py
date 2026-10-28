@@ -182,3 +182,9 @@ class LLMService:
         for i, doc in enumerate(retrieved_docs):
             print(f"  {i + 1}. {doc}")
         print("=" * 60 + "\n")
+
+    def upload_document(self, file_path: str):
+        """
+        Passes the uploaded file to the RAG Engine for processing.
+        """
+        return self.rag_engine.process_and_store_file(file_path)

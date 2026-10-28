@@ -2,6 +2,8 @@ import os
 import chromadb
 import numpy as np
 from chromadb.utils import embedding_functions
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from pypdf import PdfReader
 
 
 class RAGEngine:
@@ -69,3 +71,51 @@ class RAGEngine:
         if results and results["documents"]:
             return results["documents"][0]
         return []
+
+    def process_and_store_file(self, file_path: str):
+        """
+        Reads a PDF or TXT file, splits it into chunks, and stores them in ChromaDB.
+        """
+        text = ""
+        print("\n" + "=" * 60)
+        print(f"#3: Full Document Upload (PDF/TXT)  ...")
+        print(f"   🔍 Uploading file_path: '{file_path}'")
+        print("=" * 60)
+
+        # 1. Extract text based on file type
+        if file_path.endswith(".pdf"):
+            reader = PdfReader(file_path)
+            for page in reader.pages:
+                text += page.extract_text() + "\n"
+        elif file_path.endswith(".txt"):
+            with open(file_path, "r", encoding="utf-8") as f:
+                text = f.read()
+        else:
+            return "Unsupported file format. Please upload PDF or TXT."
+
+        if not text.strip():
+            return "File is empty or could not be read."
+
+        print(f"   text: '{text}'")
+        print("-" * 60)
+
+        # 2. Split text into chunks
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50,
+            length_function=len
+        )
+        chunks = splitter.split_text(text)
+
+        # 3. Store in ChromaDB
+        # We use a unique ID for each chunk
+        import uuid
+        ids = [str(uuid.uuid4()) for _ in chunks]
+
+        self.collection.add(
+            documents=chunks,
+            ids=ids
+        )
+        print(f"   Successfully uploaded and embedded {len(chunks)} chunks from the document.")
+        print("=" * 60)
+        return f"Successfully uploaded and embedded {len(chunks)} chunks from the document."

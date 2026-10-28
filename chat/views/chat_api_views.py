@@ -11,6 +11,10 @@ from chat.dtos import ChatRequest
 from chat.utilities.llms import LLMService
 from chat.utilities import check_rate_limit
 
+from rest_framework.parsers import MultiPartParser, FormParser
+import os
+import tempfile
+
 # # Create a single instance of the LLMService to be used across requests
 # # This reuses the underlying AsyncOpenAI client, saving resources.
 # llm_service = LLMService()
@@ -125,3 +129,39 @@ class ChatStreamAPIView(ChatAPIView):
         # Note: Remove 'Connection: keep-alive' if running on WSGI (Django's runserver)
         resp["Connection"] = "keep-alive"
         return resp
+
+
+class UploadDocumentAPIView(APIView):
+    """
+    API endpoint to handle file uploads.
+    """
+    authentication_classes = []
+    permission_classes = []
+    parser_classes = (MultiPartParser, FormParser)  # Required for file uploads
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.llm_service = LLMService()
+
+    def post(self, request):
+        if 'file' not in request.FILES:
+            return Response({"detail": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+        uploaded_file = request.FILES['file']
+
+        # Save the file temporarily to process it
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{uploaded_file.name}") as temp_file:
+            for chunk in uploaded_file.chunks():
+                temp_file.write(chunk)
+            temp_file_path = temp_file.name
+
+        try:
+            # Pass to RAG engine
+            result_message = self.llm_service.upload_document(temp_file_path)
+            return Response({"message": result_message}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        finally:
+            # Clean up the temp file
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
