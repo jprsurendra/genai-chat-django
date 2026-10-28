@@ -114,3 +114,46 @@ RAG (Retrieval-Augmented Generation) को गहराई से समझन�
 RAG सही कॉन्टेक्स्ट देता है, लेकिन उसे सही से पढ़ने के लिए बड़े मॉडल (जैसे 8B) की ज़रूरत होती है। छोटे मॉडल्स (1.5B) कभी-कभी शब्दों को गलत पढ़ सकते हैं।
 
 </details>
+
+
+---
+
+### Under the Hood: What is the `chroma_db` folder?
+
+When you run the application and store documents (like our manual knowledge base), you will notice a new folder created at `rag/rag_data/chroma_db`. 
+
+This folder is the **Local Vector Database** created by ChromaDB. It is the "brain" or "memory" of our RAG system. It ensures that your data is saved to your hard drive and persists even if you restart the server.
+
+#### What's inside the folder?
+1. **`chroma.sqlite3`**: This is the main relational database. It stores the metadata, such as which vector belongs to which text document and its unique ID. (Similar to an index page of a book).
+2. **Long UID Folders (e.g., `ff72dbe1-33d1-4ce5-970c-8fdcd31af542`)**: These folders contain the actual **Vector Embeddings** (arrays of numbers) stored in a binary format. (Similar to the actual content pages of the book).
+
+#### How is it used?
+Whenever a user asks a question, the `RAGEngine` queries this database. ChromaDB calculates the similarity between the user's query vector and the millions of vectors stored in this folder to find the most relevant context.
+
+#### ⚠️ Important Maintenance Rules:
+- **Never commit this folder to Git/GitHub:** Because this is local binary data, it will bloat your repository. Add `rag/rag_data/chroma_db/` to your `.gitignore` file.
+- **How to reset the database:** If you want to wipe the AI's memory and start fresh, simply stop the server, delete the `chroma_db` folder, and restart the server. ChromaDB will automatically create a new, empty one.
+
+<details>
+<summary><b>🇮🇳 हिंदी में समझें (Click to expand Hindi Explanation)</b></summary>
+
+<br>
+
+**`chroma_db` फोल्डर क्या है?**
+यह फोल्डर ChromaDB द्वारा बनाया गया एक **लोकल वेक्टर डेटाबेस** है। इसे आप हमारे RAG सिस्टम का "दिमाग" या "मेमोरी" समझ सकते हैं। यह आपके डेटा को आपकी हार्ड डिस्क पर सेव करता है, ताकि सर्वर रीस्टार्ट होने पर भी डेटा गायब न हो।
+
+**इसके अंदर क्या होता है?**
+1. **`chroma.sqlite3`**: यह मुख्य डेटाबेस है जो यह बताता है कि कौन सा वेक्टर किस टेक्स्ट से जुड़ा है (जैसे किताब का इंडेक्स)।
+2. **लंबे नाम वाले फोल्डर (UUID)**: इनके अंदर आपके टेक्स्ट के असली **Vectors** (नंबरों की लिस्ट) बाइनरी फॉर्मेट में सेव होते हैं।
+
+**इसका इस्तेमाल कैसे होता है?**
+जब भी आप कोई सवाल पूछते हैं, तो `RAGEngine` इसी फोल्डर में जाकर सबसे मिलता-जुलता वेक्टर ढूंढता है और उसे AI को भेजता है।
+
+**ध्यान रखने वाली बातें:**
+- **GitHub पर पुश न करें:** इसे अपनी `.gitignore` में जोड़ लें (`rag/rag_data/chroma_db/`), क्योंकि यह लोकल डेटा है।
+- **डेटा रीसेट कैसे करें:** अगर आप AI की मेमोरी साफ करना चाहते हैं, तो सर्वर बंद करें, इस फोल्डर को डिलीट करें, और सर्वर दोबारा चालू करें। ChromaDB अपने आप एक नया खाली डेटाबेस बना लेगा।
+
+</details>
+
+---
