@@ -238,6 +238,10 @@ Two changes together fixed it:
 - **User (after a refresh):** `What is my favorite color?`
 - **AI:** *"You are the User. Your favorite color is blue."*
 
+[![Chat history embedding final success](docs/screenshot_003_005.png)](docs/screenshot_003_005.png)
+
+*Screenshot: the final result after a refresh. The AI remembers the user's favorite color: [`docs/screenshot_003_005.png`](docs/screenshot_003_005.png)*
+
 It is correct, and it survived a page refresh. The opening "You are the User" is clunky, a leftover from the prompt wording; I would still like to get rid of it.
 
 ### What I want to keep an eye on
