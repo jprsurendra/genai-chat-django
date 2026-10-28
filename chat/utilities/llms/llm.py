@@ -126,6 +126,10 @@ class LLMService:
         Public method: Asynchronous Generator that yields token-by-token responses.
         Used for Server-Sent Events (SSE) streaming.
         """
+        # Save the user's message immediately
+        self.rag_engine.store_chat_message("User", user_message)
+
+        full_reply = ""
         stream = await self.client.chat.completions.create(
             model=self._resolve_model(use_fast),
             messages=self._build_messages(user_message, history),
@@ -137,6 +141,10 @@ class LLMService:
             delta = chunk.choices[0].delta.content or ""
             if delta:
                 yield delta
+
+        # After the stream finishes, save the full AI reply
+        if full_reply:
+            self.rag_engine.store_chat_message("AI", full_reply)
 
     # def debug_embeddings(self, user_message: str, sentences: list[str]):
     def debug_embeddings(self, user_message: str):
