@@ -451,19 +451,21 @@ Each branch builds on the previous one. This section records **what changed in e
 | [`genai-chat-001-basic`](README.001.md) | ✅ Done | Basic streaming chatbot (Django + DRF + Ollama) |
 | [`genai-chat-002-system-prompt`](README.002.md) | ✅ Done | Improved system prompt and fixed identity confusion |
 | [`genai-chat-003-rag`](README.003.md) | ✅ Done | Implemented Embeddings, ChromaDB, PDF upload, and Chat Memory (RAG) |
-| [`genai-chat-004-clean-up`](README.004.md) | 🚧 In Progress | Fixing architecture bugs, adding Session Isolation, and Show Sources (Citations) |
+| [`genai-chat-004-clean-up`](README.004.md) | ✅ Done | Fixing architecture bugs, adding Session Isolation, and Show Sources (Citations) |
+| [`genai-chat-005-db-auth`](README.005.md) | 🚧 In Progress | Migrating to MySQL and implementing JWT Authentication |
 ---
+
 
 ### Branching Strategy & Git Workflow
 
 We follow a simple **GitHub Flow**: `main` is always stable, and each feature lives in a short-lived branch that is created from the **latest `main`**. A new branch is created only after the previous one has been merged.
 
 ```text
-main ──●──────────────●──────────────────●────────────────●──────▶
-        \            / \                / \              /
-         001-basic ─●   002-prompt ───●   003-rag ─────● (004-clean-up)
-        (PR + CI ✅)    (PR + CI ✅)      (PR + CI ✅)    🚧 In Progress
-          tag: v0.1.0     tag: v0.2.0        tag: v0.3.0
+main ──●──────────────●──────────────────●────────────────●────────────────●──────▶
+        \            / \                / \              / \              /
+         001-basic ─●   002-prompt ───●   003-rag ─────●   004-cleanup ─● (005-db-auth)
+        (PR + CI ✅)    (PR + CI ✅)      (PR + CI ✅)    (PR + CI ✅)    🚧 In Progress
+          tag: v0.1.0     tag: v0.2.0        tag: v0.3.0      tag: v0.4.0
 ```
 
 **Why not stack branches (002 created from 001)?**
