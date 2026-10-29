@@ -86,27 +86,57 @@ class LLMService:
     async def stream_reply(
             self, user_message: str, history: list[ChatMessage], session_id: str, use_fast: bool = False
     ):
-        """
-        Public method: Asynchronous Generator that yields token-by-token responses.
-        """
-        docs = self.rag_engine.retrieve_documents(user_message, session_id, top_k=3)
-        memories = self.rag_engine.retrieve_memories(user_message, session_id, top_k=3)
+        # Use logging instead of print
+        logger.info(f"▶️ [STREAM START] User: {user_message}, Session: {session_id}")
 
-        messages = self._build_messages(user_message, history, docs, memories)
+        try:
+            # 1. Fetch Context
+            docs = self.rag_engine.retrieve_documents(user_message, session_id, top_k=3)
+            memories = self.rag_engine.retrieve_memories(user_message, session_id, top_k=3)
 
-        self.rag_engine.store_user_message(user_message, session_id)
+            logger.info(f"🔍 [RAG] Found {len(docs)} docs and {len(memories)} memories.")
 
-        stream = await self.client.chat.completions.create(
-            model=self._resolve_model(use_fast),
-            messages=messages,
-            temperature=0.7,
-            max_tokens=800,
-            stream=True,
-        )
-        async for chunk in stream:
-            delta = chunk.choices[0].delta.content or ""
-            if delta:
-                yield delta
+            # 2. Build Messages
+            messages = self._build_messages(user_message, history, docs, memories)
+            logger.info(f"📝 [PROMPT] Total messages: {len(messages)}")
+
+            print("\n=== LLM PAYLOAD DEBUG ===")
+            print(f"User Query: {user_message}")
+            print(f"Docs retrieved: {docs}")
+            print(f"Memories retrieved: {memories}")
+            print(f"Final Messages sent to LLM: {messages}")
+            print("=========================\n")
+
+            # 3. Save User Message
+            self.rag_engine.store_user_message(user_message, session_id)
+
+            # 4. Call LLM
+            logger.info("⏳ Calling LLM API...")
+            stream = await self.client.chat.completions.create(
+                model=self._resolve_model(use_fast),
+                messages=messages,
+                temperature=0.7,
+                max_tokens=800,
+                stream=True,
+            )
+
+            logger.info("✅ LLM Connected. Streaming started.")
+
+            full_reply = ""
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content or ""
+                if delta:
+                    full_reply += delta
+                    yield delta
+
+            logger.info(f"🏁 [STREAM END] Total generated: {len(full_reply)} chars.")
+
+        except Exception as e:
+            # 🔥 This will catch any hidden errors and print them in the terminal!
+            logger.error(f"❌ ERROR IN STREAM: {type(e).__name__}: {e}", exc_info=True)
+            # Re-raise to let the view handle it
+            raise e
+
 
     def upload_document(self, file_path: str, session_id: str) -> str:
         return self.rag_engine.process_and_store_file(file_path, session_id)

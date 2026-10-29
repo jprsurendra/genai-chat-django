@@ -38,13 +38,12 @@ class SessionMixin:
 
 
 class ChatAPIView(SessionMixin, APIView):
-    """Base View for Chat API."""
+    """Base View for Chat API (Non-Streaming)."""
     authentication_classes = []
     permission_classes = []
 
     @property
     def llm_service(self):
-        # Always use the shared singleton service
         return get_llm_service()
 
     def generate_post_response(self, chat_request: ChatRequest, session_id: str):
@@ -58,7 +57,6 @@ class ChatAPIView(SessionMixin, APIView):
             return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request):
-        """Handles incoming chat requests."""
         try:
             check_rate_limit(self._client_ip(request), scope="chat")
             session_id = self._session_id(request)
@@ -71,28 +69,9 @@ class ChatAPIView(SessionMixin, APIView):
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # =====================================================================
-        # 🎓 EDUCATIONAL NOTES: DEBUGGING & LEARNING (Commented Out for Production)
-        # =====================================================================
-        # Previously, we called these debug methods on every request to print
-        # Embedding Similarity scores and test the manual Vector Store directly
-        # in the terminal.
-        #
-        # Why we commented them out:
-        # 1. Performance: It made 4 extra Ollama embedding calls per message, slowing down the app.
-        # 2. Pollution: It seeded demo data into the real ChromaDB collection.
-        #
-        # If you want to test these features during development, you can uncomment
-        # them or use the `python manage.py rag_demo` command.
-        # ---------------------------------------------------------------------
-        # self.llm_service.debug_embeddings(req.message)
-        # self.llm_service.test_manual_vector_store(req.message)
-        # =====================================================================
-
         return self.generate_post_response(req, session_id)
 
     def delete(self, request):
-        """Deletes chat memory and documents for the session."""
         try:
             check_rate_limit(self._client_ip(request), scope="clear")
             session_id = self._session_id(request)
@@ -114,17 +93,30 @@ class ChatStreamAPIView(ChatAPIView):
     """Streaming View for Chat API (SSE)."""
 
     def generate_post_response(self, chat_request: ChatRequest, session_id: str):
-        try:
-            # Fetch the singleton service right before use
-            llm_service = get_llm_service()
+        # Get the service once
+        service = self.llm_service
 
-            reply = async_to_sync(llm_service.generate_reply)(
-                chat_request.message, chat_request.history, session_id, chat_request.use_fast
-            )
-            return Response({"reply": reply})
-        except Exception:
-            logger.exception("Chat request failed")
-            return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # Define the async generator
+        async def event_gen():
+            try:
+                async for delta in service.stream_reply(
+                        chat_request.message, chat_request.history, session_id, chat_request.use_fast
+                ):
+                    yield f"data: {json.dumps({'delta': delta})}\n\n".encode()
+                yield b"data: [DONE]\n\n"
+            except Exception as e:
+                logger.error(f"Streaming exception: {e}", exc_info=True)
+                yield f"data: {json.dumps({'error': GENERIC_ERROR})}\n\n".encode()
+
+        # Return the StreamingHttpResponse
+        resp = StreamingHttpResponse(event_gen(), content_type="text/event-stream")
+        resp["Cache-Control"] = "no-cache"
+        resp["X-Accel-Buffering"] = "no"
+
+        # Note: If you get a hop-by-hop header error, remove the 'Connection' line below.
+        # resp["Connection"] = "keep-alive"
+
+        return resp
 
 
 class UploadDocumentAPIView(SessionMixin, APIView):
@@ -140,7 +132,6 @@ class UploadDocumentAPIView(SessionMixin, APIView):
 
     def post(self, request):
         try:
-            # Get upload limit from settings safely
             upload_limit = getattr(settings, "UPLOAD_RATE_LIMIT", 5)
             check_rate_limit(self._client_ip(request), limit=upload_limit, scope="upload")
             session_id = self._session_id(request)
@@ -161,7 +152,6 @@ class UploadDocumentAPIView(SessionMixin, APIView):
         if uploaded_file.size > settings.RAG_MAX_UPLOAD_BYTES:
             return Response({"detail": "File too large."}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
 
-        # Save file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
             for chunk in uploaded_file.chunks():
                 temp_file.write(chunk)
