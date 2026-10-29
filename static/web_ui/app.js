@@ -127,6 +127,41 @@ function addMessage(role, content, timestamp = null, streaming = false) {
   return bubble;
 }
 
+// Helper function to render the document as a chat bubble
+function renderDocumentBubble(filename, fileUrl, timestamp) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg assistant"; // Re-use assistant styling for left alignment
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.style.backgroundColor = "#e9ecef"; // Slightly different shade
+
+    const link = document.createElement("a");
+
+    // 🔥 Fix: Ensure the path starts with /media/ so Django serves it correctly
+    link.href = fileUrl.startsWith('/media/') ? fileUrl : `/media/${fileUrl}`;
+
+    link.target = "_blank";
+    link.className = "text-decoration-none";
+    link.innerHTML = `<i class="bi bi-file-earmark-text"></i> <b>Attached Document:</b> ${filename}`;
+
+    bubble.appendChild(link);
+
+    const timeString = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeDiv = document.createElement("div");
+    timeDiv.className = "message-time";
+    timeDiv.style.fontSize = "0.75rem";
+    timeDiv.style.marginTop = "4px";
+    timeDiv.style.opacity = "0.7";
+    timeDiv.style.textAlign = "left";
+    timeDiv.textContent = timeString;
+
+    bubble.appendChild(timeDiv);
+    wrap.appendChild(bubble);
+    chatBox.appendChild(wrap);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
 input.addEventListener("input", () => {
   input.style.height = "auto";
   input.style.height = Math.min(input.scrollHeight, 120) + "px";
@@ -213,55 +248,6 @@ async function loadSidebarHistory() {
     }
 }
 
-async function loadChatSession_old(sessionId) {
-    try {
-        // Use fetchWithAuth
-        const resp = await fetchWithAuth(`/api/chat/history?session_id=${sessionId}`);
-        if (!resp.ok) return;
-
-        const data = await resp.json();
-        currentSessionId = data.id;
-        chatBox.innerHTML = "";
-
-        if (data.messages && data.messages.length > 0) {
-            data.messages.forEach(msg => {
-                addMessage(msg.role, msg.content, msg.created_at);
-            });
-            history = data.messages.map(m => ({ role: m.role, content: m.content }));
-        } else {
-            chatBox.innerHTML = `
-                <div class="welcome text-center text-muted py-5">
-                    <i class="bi bi-chat-dots display-4"></i>
-                    <p class="mt-2 mb-0">Ask anything to get started.</p>
-                </div>`;
-            history = [];
-        }
-
-        // Render attached documents for this session
-        if (data.documents && data.documents.length > 0) {
-            const docWrap = document.createElement("div");
-            docWrap.className = "mt-3 p-3 bg-light rounded shadow-sm";
-            docWrap.innerHTML = `<h6 class="mb-2"><i class="bi bi-paperclip"></i> Attached Documents:</h6>`;
-
-            data.documents.forEach(doc => {
-                const link = document.createElement("a");
-                link.href = doc.file;
-                link.target = "_blank";
-                link.className = "btn btn-sm btn-outline-secondary me-2 mb-2";
-                link.innerHTML = `<i class="bi bi-file-earmark-text"></i> ${doc.filename}`;
-                docWrap.appendChild(link);
-            });
-
-            chatBox.appendChild(docWrap);
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-
-        loadSidebarHistory();
-    } catch (err) {
-        console.error("Failed to load chat:", err);
-    }
-}
-
 async function loadChatSession(sessionId) {
     try {
         // Use fetchWithAuth
@@ -324,38 +310,6 @@ async function loadChatSession(sessionId) {
     } catch (err) {
         console.error("Failed to load chat:", err);
     }
-}
-
-// Helper function to render the document as a chat bubble
-function renderDocumentBubble(filename, fileUrl, timestamp) {
-    const wrap = document.createElement("div");
-    wrap.className = "msg assistant"; // Re-use assistant styling for left alignment
-
-    const bubble = document.createElement("div");
-    bubble.className = "bubble";
-    bubble.style.backgroundColor = "#e9ecef"; // Slightly different shade
-
-    const link = document.createElement("a");
-    link.href = fileUrl;
-    link.target = "_blank";
-    link.className = "text-decoration-none";
-    link.innerHTML = `<i class="bi bi-file-earmark-text"></i> <b>Attached Document:</b> ${filename}`;
-
-    bubble.appendChild(link);
-
-    const timeString = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const timeDiv = document.createElement("div");
-    timeDiv.className = "message-time";
-    timeDiv.style.fontSize = "0.75rem";
-    timeDiv.style.marginTop = "4px";
-    timeDiv.style.opacity = "0.7";
-    timeDiv.style.textAlign = "left";
-    timeDiv.textContent = timeString;
-
-    bubble.appendChild(timeDiv);
-    wrap.appendChild(bubble);
-    chatBox.appendChild(wrap);
-    chatBox.scrollTop = chatBox.scrollHeight;
 }
 
 function startNewChat() {
@@ -529,7 +483,8 @@ fileUpload.addEventListener("change", async (e) => {
 
     // Add Download Link
     if (data.file_url) {
-        successHtml += `<div class="mt-2"><a href="${data.file_url}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i> Download ${data.filename}</a></div>`;
+        let safeUrl = data.file_url.startsWith('/media/') ? data.file_url : `/media/${data.file_url}`;
+        successHtml += `<div class="mt-2"><a href="${safeUrl}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i> Download ${data.filename}</a></div>`;
     }
 
     const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
