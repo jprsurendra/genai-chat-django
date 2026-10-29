@@ -80,15 +80,43 @@ class RAGEngine:
         # Only return documents that are within the allowed relevance distance
         return [d for d, dist in zip(docs, dists) if dist <= self.max_distance]
 
-    def retrieve_documents(self, query: str, session_id: str, top_k: int = 3) -> list[str]:
-        """Retrieves relevant text chunks from uploaded documents."""
-        return self._query(self.documents, query, session_id, top_k)
+
+    def retrieve_documents(self, query: str, session_id: str, top_k: int = 3) -> list[dict]:
+        """Retrieves relevant
+        1. text chunks
+            return self._query(self.documents, query, session_id, top_k)
+        AND
+        2. their metadata (filename, page)
+        from uploaded documents."""
+        if self.documents.count() == 0:
+            return []
+
+        res = self.documents.query(
+            query_texts=[query],
+            n_results=top_k,
+            where={"session_id": session_id},
+            include=["documents", "distances", "metadatas"], # Include metadata
+        )
+
+        docs = (res.get("documents") or [[]])[0]
+        dists = (res.get("distances") or [[]])[0]
+        metas = (res.get("metadatas") or [[]])[0]
+
+        results = []
+        for doc, dist, meta in zip(docs, dists, metas):
+            if dist <= self.max_distance:
+                results.append({
+                    "text": doc,
+                    "filename": meta.get("filename", "Unknown"),
+                    "page": meta.get("page", 1)
+                })
+        return results
 
     def retrieve_memories(self, query: str, session_id: str, top_k: int = 3) -> list[str]:
         """Retrieves relevant past statements made by the user."""
         return self._query(self.memory, query, session_id, top_k)
 
-    def process_and_store_file(self, file_path: str, session_id: str) -> str:
+    def process_and_store_file_old(self, file_path: str, session_id: str) -> str:
         """Reads a PDF/TXT file, chunks it, and stores embeddings in ChromaDB."""
         lower = file_path.lower()
         text = ""
@@ -119,6 +147,68 @@ class RAGEngine:
             metadatas=[{"session_id": session_id}] * len(chunks),
         )
         return f"Successfully uploaded and embedded {len(chunks)} chunks from the document."
+
+    def process_and_store_file(self, file_path: str, session_id: str) -> str:
+        """Reads a PDF/TXT file, chunks it, and stores embeddings with metadata."""
+        lower = file_path.lower()
+        filename = os.path.basename(file_path)
+        text = ""
+        page_number = 1  # For TXT files
+
+        if lower.endswith(".pdf"):
+            reader = PdfReader(file_path)
+            pages = []
+            for i, page in enumerate(reader.pages):
+                page_text = page.extract_text() or ""
+                # Add a hidden tag to track page numbers during chunking
+                pages.append(f"[PAGE_{i + 1}]{page_text}")
+            text = "\n".join(pages)
+        elif lower.endswith(".txt"):
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+        else:
+            return "Unsupported file format. Please upload PDF or TXT."
+
+        if not text.strip():
+            return "File is empty or could not be read."
+
+        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50, length_function=len)
+        raw_chunks = splitter.split_text(text)
+
+        chunks = []
+        metadatas = []
+        ids = []
+
+        current_page = 1
+
+        for chunk in raw_chunks:
+            if not chunk.strip():
+                continue
+
+            # Extract page number if the tag is in this chunk
+            page_match = re.search(r"\[PAGE_(\d+)\]", chunk)
+            if page_match:
+                current_page = int(page_match.group(1))
+                # Remove the tag from the actual text shown to the LLM
+                chunk = re.sub(r"\[PAGE_\d+\]", "", chunk).strip()
+
+            if not chunk:
+                continue
+
+            chunks.append(chunk)
+            metadatas.append({
+                "session_id": session_id,
+                "filename": filename,
+                "page": current_page
+            })
+            ids.append(hashlib.sha1(f"{session_id}:{filename}:{current_page}:{chunk}".encode("utf-8")).hexdigest())
+
+        self.documents.upsert(
+            documents=chunks,
+            ids=ids,
+            metadatas=metadatas,
+        )
+        return f"Successfully uploaded and embedded {len(chunks)} chunks from {filename}."
 
     @staticmethod
     def is_memorable(content: str) -> bool:
