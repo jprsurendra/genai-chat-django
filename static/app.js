@@ -11,7 +11,6 @@ let history = [];
 let isBusy = false;
 
 // ---- Session ID Management ----
-// Generates a unique ID and stores it in localStorage so the server can scope memory to this browser.
 function getSessionId() {
   let sid = localStorage.getItem("genai_session_id");
   if (!sid) {
@@ -70,7 +69,7 @@ input.addEventListener("keydown", (e) => {
   }
 });
 
-// ---- Chat Submit ----
+// ---- Chat Submit (Streaming) ----
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (isBusy) return;
@@ -87,14 +86,16 @@ form.addEventListener("submit", async (e) => {
 
   addMessage("user", text);
   const bubble = addMessage("assistant", "", true);
+  
   let full = "";
+  let sourcesText = "";
 
   try {
     const resp = await fetch("/api/chat/stream", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Session-Id": getSessionId() // <--- Send Session ID
+        "X-Session-Id": getSessionId()
       },
       body: JSON.stringify({ message: text, history: history.slice(-10), use_fast: useFast }),
     });
@@ -124,6 +125,13 @@ form.addEventListener("submit", async (e) => {
         try {
           const data = JSON.parse(payload);
           if (data.error) throw new Error(data.error);
+          
+          // Receive Sources
+          if (data.sources) {
+            sourcesText = data.sources;
+          }
+          
+          // Receive Streaming Text
           if (data.delta) {
             full += data.delta;
             bubble.innerHTML = renderMarkdown(full);
@@ -134,6 +142,15 @@ form.addEventListener("submit", async (e) => {
     }
 
     bubble.classList.remove("typing");
+    
+    // Add Sources to UI
+    if (sourcesText) {
+      const sourceDiv = document.createElement("div");
+      sourceDiv.className = "mt-2";
+      sourceDiv.innerHTML = `<small class="text-muted"><i class="bi bi-file-earmark-text"></i> <b>Sources:</b> ${escapeHtml(sourcesText)}</small>`;
+      bubble.appendChild(sourceDiv);
+    }
+
     if (full) {
       history.push({ role: "user", content: text });
       history.push({ role: "assistant", content: full });
@@ -174,7 +191,7 @@ fileUpload.addEventListener("change", async (e) => {
 
     const resp = await fetch("/api/upload", {
       method: "POST",
-      headers: { "X-Session-Id": getSessionId() }, // <--- Send Session ID
+      headers: { "X-Session-Id": getSessionId() },
       body: formData
     });
     const data = await resp.json().catch(() => ({}));
@@ -195,12 +212,11 @@ fileUpload.addEventListener("change", async (e) => {
   }
 });
 
-// ---- Clear Button (Deletes Server Memory too) ----
+// ---- Clear Button ----
 clearBtn.addEventListener("click", async () => {
   if (isBusy) return;
 
   try {
-    // Tell the server to delete memory and documents for this session
     await fetch("/api/chat", {
       method: "DELETE",
       headers: { "X-Session-Id": getSessionId() }
