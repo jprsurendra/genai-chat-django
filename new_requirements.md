@@ -5,58 +5,81 @@ This project is evolving from a basic local RAG (Retrieval-Augmented Generation)
 
 ---
 
-## 2. Immediate Priorities: Quick Wins & Clean-up
-Before adding new features, we must fix technical debt and implement high-impact, low-effort features.
-- **Code Clean-up:** Implement all fixes from the code review (correct `requirements.txt`, remove debug calls, fix JS SSE error swallowing, ensure `DEBUG=False` by default).
-- **Show Sources (Citations):** Modify RAG metadata to include `filename` and `page number`. Display this to the user so they can verify the AI's answer.
-- **Stop Generation:** Use `AbortController` in the frontend to stop SSE streaming mid-generation.
+## 2. Core Architectural Requirements (Your Vision)
+
+### 🔐 1. Authentication & Authorization (Security)
+- **Current State:** Uses client-side `X-Session-Id` which only separates data but does not verify identity.
+- **Requirement:** Implement a robust, secure login system.
+- **Implementation:**
+  - Use **Django REST Framework SimpleJWT** for token-based authentication.
+  - Implement User Registration, Login, and Logout APIs.
+  - Migrate from `session_id` to `user_id` for all RAG scoping.
+  - Restrict all chat, memory, and document endpoints to authenticated users only.
+
+### 🗄️ 2. Database & Vector Store (Data Persistence)
+- **Current State:** Data is stored locally in ChromaDB and lost if the server restarts (in-memory/volatile).
+- **Requirement:** We need a hybrid storage architecture.
+- **Implementation:**
+  - **MySQL (Relational DB):** Store User profiles, Chat Sessions, Chat History, and Document Metadata.
+  - **ChromaDB / Vector DB:** Keep a dedicated Vector Database strictly for embeddings (RAG).
+  - **Data Deletion:** Ensure "Clear Chat" or "Delete Account" wipes data from both MySQL and the Vector DB.
+
+### ⚡ 3. Caching (Performance)
+- **Requirement:** Reduce LLM costs and response times.
+- **Implementation:**
+  - Use **Redis** for high-speed caching.
+  - Implement **Semantic Caching:** If a user asks a question very similar to a recently asked one, return the cached answer.
+  - Cache RAG retrieval results to avoid repeated queries to the Vector DB.
+
+### 🤖 4. Agentic Capabilities (Not just a Chatbot)
+- **Requirement:** The system must "think" and "act", not just answer.
+- **Implementation:**
+  - Implement **Tool Calling (Function Calling)**.
+  - Agents should be able to use tools like: Web Search (Tavily), Database Querying, and Calculators.
+  - Support **Multi-step reasoning** (Chain of Thought) to break down complex tasks.
+
+### 🌐 5. LLM Provider & Scalability (Alternatives)
+- **Requirement:** Small local models (1.5B/8B) are good for learning but fail at complex reasoning.
+- **Implementation:**
+  - **Provider Agnostic:** Keep the `openai` SDK wrapper.
+  - **Local (Dev):** Ollama (Zero cost).
+  - **Production (Accuracy):** OpenAI (GPT-4o), Anthropic (Claude 3.5), OpenRouter, or Ollama Cloud (for large open-source models).
+  - **Model Routing:** Send simple queries to fast models, complex ones to smart models.
+
+---
+
+## 3. RAG Quality & Advanced Features
+
+- **Query Rewriting:** Rewrite follow-up questions (e.g., "What is its price?") into standalone queries before retrieval.
+- **Hybrid Search & Reranking:** Combine Vector search with Keyword search (BM25) and use a reranker for exact matches (names, IDs).
+- **Multilingual Embeddings:** Switch from `nomic-embed-text` to a model like `BAAI/bge-m3` for better Hindi/Hinglish retrieval.
+- **Smarter Chunking:** Split text based on structure (pages/headings) instead of fixed 500-character limits.
+- **Show Sources (Citations):** Display the `filename` and `page number` in the UI so users can verify the AI's answer.
+- **Evaluation Set:** Create 20-30 Q&A pairs to test retrieval accuracy and tune `RAG_MAX_DISTANCE`.
+- **LLM Memory Extraction:** Use the LLM to extract structured facts (e.g., `{"favorite_color": "blue"}`) instead of simple string matching.
+
+---
+
+## 4. UI/UX & Quick Wins
+- **Stop Generation:** Add an `AbortController` to stop SSE streaming.
 - **Copy Button:** Add syntax highlighting and a "Copy" button for code blocks.
-- **Token-based History Trimming:** Replace the "last 10 messages" logic with token-count-based trimming to prevent context window overflow.
-- **Uploaded Documents List:** Allow users to see which documents are indexed and delete them individually (currently, only a global clear is possible).
+- **Document Management:** List uploaded documents in the UI and allow individual deletion.
+- **Token-based History:** Replace "last 10 messages" with token-count-based trimming to prevent context overflow.
+- **Feedback:** Add 👍/👎 buttons on responses for future model evaluation.
+- **Voice & Hindi UI:** Use the browser's Speech API for voice input/output.
 
 ---
 
-## 3. Advanced RAG (Retrieval Quality)
-To improve accuracy, we must move beyond basic vector similarity search.
-- **Query Rewriting:** Use the LLM to rewrite follow-up questions (e.g., "What is its price?") into standalone queries before retrieving.
-- **Hybrid Search & Reranking:** Combine Vector search with Keyword search (BM25). Use a cross-encoder model (reranker) to re-rank the top results for exact matches (names, IDs, numbers).
-- **Multilingual Embeddings:** Switch from `nomic-embed-text` (English-focused) to a multilingual model like `BAAI/bge-m3` for better Hindi/Hinglish retrieval.
-- **Smarter Chunking:** Split text based on structure (headings, paragraphs, pages) instead of a fixed 500-character limit.
-- **LLM Memory Extraction:** Replace the current "doesn't end with a question mark" heuristic. Use the LLM to extract structured facts (e.g., `{"favorite_color": "blue"}`) and update existing memories.
-- **Evaluation Set:** Create a set of 20-30 Q&A pairs to test retrieval accuracy. Tune `RAG_MAX_DISTANCE` based on data, not guesses.
-
----
-
-## 4. Database, Security & Performance
-- **Authentication & Authorization:** Implement JWT-based login (using `djangorestframework-simplejwt`). Replace `X-Session-Id` with user-specific scoping.
-- **MySQL Database:** Use MySQL as the primary database for User profiles, Chat History, and Document Metadata.
-- **Caching (Redis):** Implement Redis for rate limiting (across multiple workers) and Semantic Caching (caching frequent answers).
-- **Background Indexing (Celery):** Move heavy PDF embedding tasks to a Celery background worker so the API doesn't block.
-- **Vector DB Strategy:** Keep ChromaDB for local dev, but plan to migrate to **PostgreSQL + pgvector** for production to unify SQL and Vector data.
-
----
-
-## 5. Agentic Capabilities (Not just a Chatbot)
-The ultimate goal is to build an Agent that can "think" and "act".
-- **Tool Calling (Function Calling):** Give the LLM tools such as:
-  - Web Search (e.g., Tavily API).
-  - Database Querying (e.g., "How many users registered today?").
-  - Calculators for math.
-- **Structured Output:** Enforce JSON schema responses when the AI needs to output data for the frontend.
-- **Model Routing & Fallback:** Route simple questions to fast/local models (Ollama) and complex ones to cloud models (OpenAI GPT-4o, Claude 3.5). Implement fallback if one provider fails.
-- **LLM Provider Alternatives:** Support OpenAI, Anthropic, OpenRouter, and Ollama Cloud for higher accuracy and larger context windows.
-
----
-
-## 6. Production Readiness & Observability
+## 5. Production Readiness & DevOps
+- **Background Indexing (Celery):** Move PDF embedding to a background worker so the API doesn't block.
 - **Docker Compose:** Containerize Django, MySQL, Redis, and Ollama for one-command setup.
-- **Observability:** Add structured logging with Request IDs, latency tracking, token counts, and retrieval hits. Consider integrating Langfuse for LLM tracing.
-- **Security Hardening:** Implement CSP headers, SRI (Subresource Integrity) hashes for CDN scripts, file size limits, and data retention policies.
-- **Feedback Mechanism:** Add 👍/👎 buttons on chat responses to collect data for future evaluation and fine-tuning.
+- **Observability:** Add structured logging (Request ID, latency, token count) and consider Langfuse for LLM tracing.
+- **Security Hardening:** Implement CSP headers, SRI hashes for CDN, and file size limits.
+- **CI/CD:** Add GitHub Actions to run `manage.py test` and `ruff` on every push.
 
 ---
 
-## 7. Roadmap (Branch Strategy)
+## 6. Implementation Roadmap (Branch Strategy)
 
 | Branch | Focus Area | Key Deliverables |
 | :--- | :--- | :--- |
