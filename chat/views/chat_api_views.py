@@ -10,46 +10,38 @@ from asgiref.sync import async_to_sync
 from pydantic import ValidationError
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from asgiref.sync import async_to_sync, sync_to_async
 from chat.dtos import ChatRequest
 from chat.utilities import check_rate_limit, get_llm_service
-from chat.utilities.rags.rag_engine import is_valid_session_id
+from chat.models import ChatSession, ChatMessage
 
 logger = logging.getLogger(__name__)
 GENERIC_ERROR = "Something went wrong while processing your request."
 
 
-class SessionMixin:
-    """Mixin to handle IP extraction and Session ID validation."""
-
-    def _client_ip(self, request) -> str:
-        if settings.TRUST_X_FORWARDED_FOR:
-            xff = request.META.get("HTTP_X_FORWARDED_FOR")
-            if xff: return xff.split(",")[0].strip()
-        return request.META.get("REMOTE_ADDR", "unknown")
-
-    def _session_id(self, request) -> str:
-        sid = request.META.get("HTTP_X_SESSION_ID", "")
-        if not is_valid_session_id(sid):
-            raise ValueError("Missing or invalid X-Session-Id header.")
-        return sid
-
-
-class ChatAPIView(SessionMixin, APIView):
-    """Base View for Chat API (Non-Streaming)."""
-    authentication_classes = []
-    permission_classes = []
+class ChatAPIView(APIView):
+    """
+    Base View for Chat API (Non-Streaming).
+    Requires a valid JWT token for access.
+    """
+    # authentication_classes = []
+    # permission_classes = [IsAuthenticated]
+    # JWT Authentication
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
     @property
     def llm_service(self):
         return get_llm_service()
 
-    def generate_post_response(self, chat_request: ChatRequest, session_id: str):
+    def generate_post_response(self, chat_request: ChatRequest, user_id: str):
         try:
             reply = async_to_sync(self.llm_service.generate_reply)(
-                chat_request.message, chat_request.history, session_id, chat_request.use_fast
+                chat_request.message, chat_request.history, str(user_id), chat_request.use_fast
             )
             return Response({"reply": reply})
         except Exception:
@@ -58,8 +50,82 @@ class ChatAPIView(SessionMixin, APIView):
 
     def post(self, request):
         try:
-            check_rate_limit(self._client_ip(request), scope="chat")
-            session_id = self._session_id(request)
+            check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="chat")
+
+            # User ID is extracted from the JWT token
+            user_id = request.user.id
+            req = ChatRequest(**request.data)
+
+        except PermissionDenied as e:
+            return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        except ValidationError as e:
+            return Response({"detail": json.loads(e.json(include_url=False, include_input=False))},
+                            status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # =====================================================================
+        # 🎓 EDUCATIONAL NOTES: DEBUGGING & LEARNING (Commented Out for Production)
+        # =====================================================================
+        # Previously, we called these debug methods on every request to print
+        # Embedding Similarity scores and test the manual Vector Store directly
+        # in the terminal.
+        #
+        # Why we commented them out:
+        # 1. Performance: It made 4 extra Ollama embedding calls per message, slowing down the app.
+        # 2. Pollution: It seeded demo data into the real ChromaDB collection.
+        #
+        # If you want to test these features during development, you can uncomment
+        # them or use the `python manage.py rag_demo` command.
+        # ---------------------------------------------------------------------
+        # self.llm_service.debug_embeddings(req.message)
+        # self.llm_service.test_manual_vector_store(req.message)
+        # =====================================================================
+
+        # 1. Create or get session
+        session, _ = ChatSession.objects.get_or_create(user=request.user, title="Default Chat")
+
+        # 2. Save User Message to DB
+        ChatMessage.objects.create(session=session, role="user", content=req.message)
+
+        # 3. Get AI Response    Call LLM (Non-streaming)
+        response = self.generate_post_response(req, user_id)
+
+        # 4. Save AI Reply to DB
+        if response.status_code == 200:
+            ai_reply = response.data.get("reply", "")
+            ChatMessage.objects.create(session=session, role="assistant", content=ai_reply)
+
+        return response
+
+    def delete(self, request):
+        try:
+            check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="clear")
+            user_id = request.user.id
+        except PermissionDenied as e:
+            return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        try:
+            self.llm_service.clear_session(str(user_id))
+            # Also clear chat history from MySQL for this user
+            ChatSession.objects.filter(user=request.user).delete()
+        except Exception:
+            logger.exception("Clearing session failed")
+            return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({"message": "Memory, documents, and chat history cleared."})
+
+
+class ChatStreamAPIView(ChatAPIView):
+    """
+    Streaming View for Chat API (SSE).
+    Overrides the post method to handle streaming instead of JSON.
+    """
+
+    def post(self, request):
+        try:
+            check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="chat")
+            user_id = request.user.id
             req = ChatRequest(**request.data)
         except PermissionDenied as e:
             return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
@@ -69,60 +135,90 @@ class ChatAPIView(SessionMixin, APIView):
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return self.generate_post_response(req, session_id)
+        # Create DB Session and save User Message
+        session, _ = ChatSession.objects.get_or_create(user=request.user, title="Default Chat")
+        ChatMessage.objects.create(session=session, role="user", content=req.message)
 
-    def delete(self, request):
-        try:
-            check_rate_limit(self._client_ip(request), scope="clear")
-            session_id = self._session_id(request)
-        except PermissionDenied as e:
-            return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
-        except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            self.llm_service.clear_session(session_id)
-        except Exception:
-            logger.exception("Clearing session failed")
-            return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        return Response({"message": "Memory and uploaded documents cleared."})
-
-
-class ChatStreamAPIView(ChatAPIView):
-    """Streaming View for Chat API (SSE)."""
-
-    def generate_post_response(self, chat_request: ChatRequest, session_id: str):
-        # Get the service once
         service = self.llm_service
 
-        # Define the async generator
+        # async def event_gen():
+        #     full_reply = ""
+        #     try:
+        #         async for delta in service.stream_reply(
+        #                 req.message, req.history, str(user_id), req.use_fast
+        #         ):
+        #             full_reply += delta
+        #             yield f"data: {json.dumps({'delta': delta})}\n\n".encode()
+        #         yield b"data: [DONE]\n\n"
+        #
+        #         # Save AI reply to DB after streaming finishes
+        #         if full_reply:
+        #             # Use sync_to_async if needed, but since we are in an async context
+        #             # and DB operations are synchronous, it's safe enough for this demo.
+        #             ChatMessage.objects.create(session=session, role="assistant", content=full_reply)
+        #
+        #     except Exception as e:
+        #         logger.error(f"Streaming exception: {e}", exc_info=True)
+        #         yield f"data: {json.dumps({'error': GENERIC_ERROR})}\n\n".encode()
         async def event_gen():
+            full_reply = ""
             try:
                 async for delta in service.stream_reply(
-                        chat_request.message, chat_request.history, session_id, chat_request.use_fast
+                        req.message, req.history, str(user_id), req.use_fast
                 ):
+                    full_reply += delta
                     yield f"data: {json.dumps({'delta': delta})}\n\n".encode()
                 yield b"data: [DONE]\n\n"
+
+                # Save AI reply to DB after streaming finishes
+                if full_reply:
+                    # Use sync_to_async to prevent SynchronousOnlyOperation error
+                    await sync_to_async(ChatMessage.objects.create)(
+                        session=session,
+                        role="assistant",
+                        content=full_reply
+                    )
+
             except Exception as e:
                 logger.error(f"Streaming exception: {e}", exc_info=True)
                 yield f"data: {json.dumps({'error': GENERIC_ERROR})}\n\n".encode()
 
-        # Return the StreamingHttpResponse
         resp = StreamingHttpResponse(event_gen(), content_type="text/event-stream")
         resp["Cache-Control"] = "no-cache"
         resp["X-Accel-Buffering"] = "no"
-
-        # Note: If you get a hop-by-hop header error, remove the 'Connection' line below.
-        # resp["Connection"] = "keep-alive"
-
         return resp
 
 
-class UploadDocumentAPIView(SessionMixin, APIView):
-    """View to handle PDF/TXT uploads."""
-    authentication_classes = []
-    permission_classes = []
+class ChatHistoryAPIView(APIView):
+    """
+    API to fetch chat history for the logged-in user.
+    """
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        sessions = ChatSession.objects.filter(user=request.user).order_by('-updated_at')
+        data = []
+        for s in sessions:
+            messages = s.messages.all().values('role', 'content', 'created_at')
+            data.append({
+                "id": s.id,
+                "title": s.title,
+                "messages": list(messages)
+            })
+        return Response({"sessions": data})
+
+
+class UploadDocumentAPIView(APIView):
+    """
+    View to handle PDF/TXT uploads.
+    """
+    # authentication_classes = []
+    # permission_classes = [IsAuthenticated]
+    # JWT Authentication Add
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
     parser_classes = (MultiPartParser, FormParser)
     ALLOWED_EXT = (".pdf", ".txt")
 
@@ -133,12 +229,10 @@ class UploadDocumentAPIView(SessionMixin, APIView):
     def post(self, request):
         try:
             upload_limit = getattr(settings, "UPLOAD_RATE_LIMIT", 5)
-            check_rate_limit(self._client_ip(request), limit=upload_limit, scope="upload")
-            session_id = self._session_id(request)
+            check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), limit=upload_limit, scope="upload")
+            user_id = request.user.id
         except PermissionDenied as e:
             return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
-        except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         if "file" not in request.FILES:
             return Response({"detail": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
@@ -158,7 +252,8 @@ class UploadDocumentAPIView(SessionMixin, APIView):
             temp_file_path = temp_file.name
 
         try:
-            result_message = self.llm_service.upload_document(temp_file_path, session_id)
+            # Pass original filename to RAG Engine
+            result_message = self.llm_service.upload_document(temp_file_path, safe_name, str(user_id))
             return Response({"message": result_message}, status=status.HTTP_200_OK)
         except Exception:
             logger.exception("Upload failed")

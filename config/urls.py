@@ -18,8 +18,12 @@ Including another URLconf
 from django.urls import path, include
 
 urlpatterns = [
-    # path('admin/', admin.site.urls),
-    path("", include("chat.urls")),
+    # API Routes (Backend)
+    path("api/auth/", include("accounts.urls")),
+    path("api/", include("chat.urls")),
+
+    # UI Routes (Frontend)
+    path("", include("web_ui.urls")),
 ]
 
  

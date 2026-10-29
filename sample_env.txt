@@ -19,3 +19,11 @@ RAG_MAX_DISTANCE=0.55
 CHAT_RATE_LIMIT=20
 RATE_WINDOW_SECONDS=60
 UPLOAD_RATE_LIMIT=5
+
+
+# Database information
+DB_NAME=genai_chat_db
+DB_USER=genai_user
+DB_PASSWORD=your_password_here
+DB_HOST=localhost
+DB_PORT=3306

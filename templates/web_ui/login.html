@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login - GenAI Chat</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="d-flex align-items-center" style="height: 100vh;">
+    <div class="container" style="max-width: 400px;">
+        <div class="card">
+            <div class="card-body p-4">
+                <h3 class="text-center mb-4">GenAI Login</h3>
+
+                <ul class="nav nav-tabs mb-3" id="authTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="login-tab" data-bs-toggle="tab" data-bs-target="#login" type="button" role="tab">Login</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="register-tab" data-bs-toggle="tab" data-bs-target="#register" type="button" role="tab">Register</button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="authTabsContent">
+                    <!-- Login Form -->
+                    <div class="tab-pane fade show active" id="login" role="tabpanel">
+                        <form id="loginForm">
+                            <div class="mb-3">
+                                <label>Username</label>
+                                <input type="text" id="loginUsername" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label>Password</label>
+                                <input type="password" id="loginPassword" class="form-control" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Login</button>
+                            <div id="loginError" class="text-danger mt-2 text-center"></div>
+                        </form>
+                    </div>
+
+                    <!-- Register Form (Updated) -->
+                    <div class="tab-pane fade" id="register" role="tabpanel">
+                        <form id="registerForm">
+                            <div class="mb-3">
+                                <label>Username</label>
+                                <input type="text" id="regUsername" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label>Email</label>
+                                <input type="email" id="regEmail" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label>Password</label>
+                                <input type="password" id="regPassword" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label>Confirm Password</label>
+                                <input type="password" id="regConfirmPassword" class="form-control" required>
+                            </div>
+                            <button type="submit" class="btn btn-success w-100">Register</button>
+                            <div id="regError" class="text-danger mt-2 text-center"></div>
+                        </form>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // --- Login Logic ---
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            const errorDiv = document.getElementById('loginError');
+
+            try {
+                const resp = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await resp.json();
+
+                if (!resp.ok) throw new Error(data.error || 'Login failed');
+
+                // Save tokens and redirect
+                localStorage.setItem('access_token', data.access);
+                localStorage.setItem('refresh_token', data.refresh);
+                localStorage.setItem('username', data.username);
+                window.location.href = '/';
+
+            } catch (err) {
+                errorDiv.textContent = err.message;
+            }
+        });
+
+        // --- Register Logic (Updated) ---
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('regUsername').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const confirmPassword = document.getElementById('regConfirmPassword').value;
+            const errorDiv = document.getElementById('regError');
+
+            // Frontend validation for password match
+            if (password !== confirmPassword) {
+                errorDiv.textContent = "Passwords do not match!";
+                return;
+            }
+
+            try {
+                const resp = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: username,
+                        email: email,
+                        password: password,
+                        confirm_password: confirmPassword
+                    })
+                });
+                const data = await resp.json();
+
+                if (!resp.ok) throw new Error(data.error || 'Registration failed');
+
+                alert('Registration successful! Please login.');
+                document.getElementById('login-tab').click(); // Switch to login tab
+
+            } catch (err) {
+                errorDiv.textContent = err.message;
+            }
+        });
+    </script>
+</body>
+</html>
