@@ -584,8 +584,6 @@ With the small local models (`qwen2.5:1.5b`, `llama3.2:1b`), an ambiguous prompt
 | 3 | `My name is SSR. and i want do calculate by you 2+2` | Correct: `The answer to 2+2 is 4.` |
 
 
-[![Issue found during Testing Branch 001](docs/screenshot_002.png)](docs/screenshot_002.png)
-
 *Screenshot (Issue found during Testing Branch 001): small model confused by `I am SSR, 2+2?` — [`docs/screenshot_002.png`](docs/screenshot_002.png)*
 **Deep Dive into Model Behavior (Screenshot Analysis)**
 
