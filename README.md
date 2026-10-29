@@ -459,11 +459,11 @@ Each branch builds on the previous one. This section records **what changed in e
 We follow a simple **GitHub Flow**: `main` is always stable, and each feature lives in a short-lived branch that is created from the **latest `main`**. A new branch is created only after the previous one has been merged.
 
 ```text
-main ──●──────────────●──────────────────●──────▶
-        \            / \                /
-         001-basic ─●   002-system-prompt
-        (PR + CI ✅)    (PR + CI ✅)
-          tag: v0.1.0     tag: v0.2.0
+main ──●──────────────●──────────────────●────────────────●──────▶
+        \            / \                / \              /
+         001-basic ─●   002-prompt ───●   003-rag ─────● (004-clean-up)
+        (PR + CI ✅)    (PR + CI ✅)      (PR + CI ✅)    🚧 In Progress
+          tag: v0.1.0     tag: v0.2.0        tag: v0.3.0
 ```
 
 **Why not stack branches (002 created from 001)?**
