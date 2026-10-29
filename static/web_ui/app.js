@@ -213,7 +213,7 @@ async function loadSidebarHistory() {
     }
 }
 
-async function loadChatSession(sessionId) {
+async function loadChatSession_old(sessionId) {
     try {
         // Use fetchWithAuth
         const resp = await fetchWithAuth(`/api/chat/history?session_id=${sessionId}`);
@@ -260,6 +260,102 @@ async function loadChatSession(sessionId) {
     } catch (err) {
         console.error("Failed to load chat:", err);
     }
+}
+
+async function loadChatSession(sessionId) {
+    try {
+        // Use fetchWithAuth
+        const resp = await fetchWithAuth(`/api/chat/history?session_id=${sessionId}`);
+        if (!resp.ok) return;
+
+        const data = await resp.json();
+        currentSessionId = data.id;
+        chatBox.innerHTML = "";
+
+        // 1. Create a combined list of messages and documents
+        let combinedItems = [];
+
+        if (data.messages) {
+            data.messages.forEach(msg => {
+                combinedItems.push({
+                    type: 'message',
+                    role: msg.role,
+                    content: msg.content,
+                    timestamp: new Date(msg.created_at)
+                });
+            });
+        }
+
+        if (data.documents) {
+            data.documents.forEach(doc => {
+                combinedItems.push({
+                    type: 'document',
+                    filename: doc.filename,
+                    file_url: doc.file,
+                    timestamp: new Date(doc.uploaded_at)
+                });
+            });
+        }
+
+        // 2. Sort the combined list by timestamp (oldest first)
+        combinedItems.sort((a, b) => a.timestamp - b.timestamp);
+
+        // 3. Render them in order
+        if (combinedItems.length > 0) {
+            combinedItems.forEach(item => {
+                if (item.type === 'message') {
+                    addMessage(item.role, item.content, item.timestamp);
+                    // Update history for the LLM context
+                    history.push({ role: item.role, content: item.content });
+                } else if (item.type === 'document') {
+                    renderDocumentBubble(item.filename, item.file_url, item.timestamp);
+                }
+            });
+        } else {
+            chatBox.innerHTML = `
+                <div class="welcome text-center text-muted py-5">
+                    <i class="bi bi-chat-dots display-4"></i>
+                    <p class="mt-2 mb-0">Ask anything to get started.</p>
+                </div>`;
+            history = [];
+        }
+
+        loadSidebarHistory();
+    } catch (err) {
+        console.error("Failed to load chat:", err);
+    }
+}
+
+// Helper function to render the document as a chat bubble
+function renderDocumentBubble(filename, fileUrl, timestamp) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg assistant"; // Re-use assistant styling for left alignment
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.style.backgroundColor = "#e9ecef"; // Slightly different shade
+
+    const link = document.createElement("a");
+    link.href = fileUrl;
+    link.target = "_blank";
+    link.className = "text-decoration-none";
+    link.innerHTML = `<i class="bi bi-file-earmark-text"></i> <b>Attached Document:</b> ${filename}`;
+
+    bubble.appendChild(link);
+
+    const timeString = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeDiv = document.createElement("div");
+    timeDiv.className = "message-time";
+    timeDiv.style.fontSize = "0.75rem";
+    timeDiv.style.marginTop = "4px";
+    timeDiv.style.opacity = "0.7";
+    timeDiv.style.textAlign = "left";
+    timeDiv.textContent = timeString;
+
+    bubble.appendChild(timeDiv);
+    wrap.appendChild(bubble);
+    chatBox.appendChild(wrap);
+    chatBox.scrollTop = chatBox.scrollHeight;
 }
 
 function startNewChat() {
