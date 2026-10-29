@@ -1,6 +1,22 @@
+import os
 from django.db import models
 from django.contrib.auth.models import User
 
+
+# =====================================================================
+# HELPER FUNCTIONS
+# =====================================================================
+def user_directory_path(instance, filename):
+    """
+    File will be uploaded to MEDIA_ROOT/documents/user_<id>/<filename>
+    """
+    # instance.user.id is used to create a separate folder for each user
+    return f'documents/user_{instance.user.id}/{filename}'
+
+
+# =====================================================================
+# MODELS
+# =====================================================================
 class ChatSession(models.Model):
     """
     Represents a single conversation thread for a user.
@@ -43,6 +59,11 @@ class UploadedDocument(models.Model):
     Represents a document uploaded by the user for RAG.
     """
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="documents")
+    chat_session = models.ForeignKey(ChatSession, on_delete=models.CASCADE, related_name="documents", null=True,
+                                     blank=True)
+    # Use the custom function for upload path
+    file = models.FileField(upload_to=user_directory_path)
+
     filename = models.CharField(max_length=255)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     chunk_count = models.IntegerField(default=0)

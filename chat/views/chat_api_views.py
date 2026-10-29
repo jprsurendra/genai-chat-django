@@ -17,7 +17,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from chat.dtos import ChatRequest
 from chat.utilities import check_rate_limit, get_llm_service
-from chat.models import ChatSession, ChatMessage
+from chat.models import ChatSession, ChatMessage, UploadedDocument
 
 logger = logging.getLogger(__name__)
 GENERIC_ERROR = "Something went wrong while processing your request."
@@ -203,10 +203,15 @@ class ChatHistoryAPIView(APIView):
                 session = ChatSession.objects.get(id=session_id, user=request.user, is_deleted=False)
                 # Ensure messages are fetched correctly
                 messages = session.messages.filter(is_deleted=False).values('role', 'content', 'created_at')
+
+                # Fetch documents for this session
+                documents = session.documents.all().values('id', 'filename', 'file', 'uploaded_at')
+
                 return Response({
                     "id": session.id,
                     "title": session.title,
-                    "messages": list(messages)
+                    "messages": list(messages),
+                    "documents": list(documents)
                 })
             except ChatSession.DoesNotExist:
                 return Response({"error": "Session not found"}, status=404)
@@ -290,17 +295,40 @@ class UploadDocumentAPIView(APIView):
         if uploaded_file.size > settings.RAG_MAX_UPLOAD_BYTES:
             return Response({"detail": "File too large."}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
-            for chunk in uploaded_file.chunks():
-                temp_file.write(chunk)
-            temp_file_path = temp_file.name
+        # 1. Get Session (if any)
+        session_id = request.data.get("session_id")
+        chat_session = None
+        if session_id:
+            chat_session = ChatSession.objects.filter(id=session_id, user=request.user).first()
+
+        # 2. Create the Database Entry FIRST and let Django save the file
+        # (Django will automatically use the 'user_directory_path' function from models.py)
+        doc = UploadedDocument.objects.create(
+            user=request.user,
+            chat_session=chat_session,
+            file=uploaded_file,  # Pass the file directly
+            filename=safe_name
+        )
+
+        # Now the file is saved at: media/documents/user_<id>/filename.ext
+        file_path = doc.file.path
 
         try:
-            # Pass original filename to RAG Engine
-            result_message = self.llm_service.upload_document(temp_file_path, safe_name, str(user_id))
-            return Response({"message": result_message}, status=status.HTTP_200_OK)
+            # 3. Pass the saved file path to RAG Engine for processing
+            result_message = self.llm_service.upload_document(file_path, safe_name, str(user_id))
+
+            # Extract chunk count from the result message (optional)
+            doc.chunk_count = result_message.count('chunks')
+            doc.save()
+
+            return Response({
+                "message": result_message,
+                "file_url": doc.file.url,  # URL to download the file
+                "filename": safe_name
+            }, status=status.HTTP_200_OK)
+
         except Exception:
-            logger.exception("Upload failed")
+            logger.exception("Upload processing failed")
+            # If processing fails, delete the file and DB entry
+            doc.delete()
             return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        finally:
-            if os.path.exists(temp_file_path): os.remove(temp_file_path)

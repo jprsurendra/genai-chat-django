@@ -237,6 +237,25 @@ async function loadChatSession(sessionId) {
             history = [];
         }
 
+        // Render attached documents for this session
+        if (data.documents && data.documents.length > 0) {
+            const docWrap = document.createElement("div");
+            docWrap.className = "mt-3 p-3 bg-light rounded shadow-sm";
+            docWrap.innerHTML = `<h6 class="mb-2"><i class="bi bi-paperclip"></i> Attached Documents:</h6>`;
+
+            data.documents.forEach(doc => {
+                const link = document.createElement("a");
+                link.href = doc.file;
+                link.target = "_blank";
+                link.className = "btn btn-sm btn-outline-secondary me-2 mb-2";
+                link.innerHTML = `<i class="bi bi-file-earmark-text"></i> ${doc.filename}`;
+                docWrap.appendChild(link);
+            });
+
+            chatBox.appendChild(docWrap);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
         loadSidebarHistory();
     } catch (err) {
         console.error("Failed to load chat:", err);
@@ -392,6 +411,11 @@ fileUpload.addEventListener("change", async (e) => {
     const formData = new FormData();
     formData.append("file", file);
 
+    // Add session_id to formData if we are in an active session
+    if (currentSessionId) {
+        formData.append("session_id", currentSessionId);
+    }
+
     // Use fetchWithAuth (Note: Don't set Content-Type manually for FormData)
     const resp = await fetchWithAuth("/api/upload", {
       method: "POST",
@@ -406,6 +430,12 @@ fileUpload.addEventListener("change", async (e) => {
     bubble.classList.remove("typing");
 
     let successHtml = renderMarkdown(data.message || "Document uploaded.");
+
+    // Add Download Link
+    if (data.file_url) {
+        successHtml += `<div class="mt-2"><a href="${data.file_url}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i> Download ${data.filename}</a></div>`;
+    }
+
     const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     successHtml += `<div class="message-time" style="font-size: 0.75rem; margin-top: 4px; opacity: 0.7;">${timeString}</div>`;
     bubble.innerHTML = successHtml;
