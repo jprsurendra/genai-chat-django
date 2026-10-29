@@ -1,0 +1,16 @@
+# Django Config
+DJANGO_DEBUG=1
+DJANGO_SECRET_KEY=dev-only-insecure-key
+
+# LLM Config
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434/v1
+OLLAMA_MODEL=llama3.2:1b
+OLLAMA_MODEL_FAST=qwen2.5:1.5b
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o-mini
+
+# RAG Config
+OLLAMA_EMBED_URL=http://localhost:11434/api/embeddings
+EMBED_MODEL=nomic-embed-text
+RAG_MAX_DISTANCE=0.55

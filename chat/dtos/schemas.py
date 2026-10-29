@@ -3,7 +3,8 @@ from typing import Literal
 
 class ChatMessage(BaseModel):
     """
-    DTO (Data Transfer Object) for a single message.
+    DTO (Data Transfer Object) for a single message. Only 'user' and 'assistant' roles are accepted.
+    Accepting 'system' would allow a client to override the server's system prompt.
     Validates that the role is strictly one of the allowed values.
     """
     role: Literal["user", "assistant", "system"]
@@ -15,7 +16,7 @@ class ChatRequest(BaseModel):
     Enforces rules like message length (1 to 4000 chars) and sets a default empty history.
     """
     message: str = Field(..., min_length=1, max_length=4000)
-    history: list[ChatMessage] = Field(default_factory=list)
+    history: list[ChatMessage] = Field(default_factory=list, max_length=50)
     use_fast: bool = False
 
 class ChatResponse(BaseModel):
