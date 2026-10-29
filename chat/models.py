@@ -9,6 +9,8 @@ class ChatSession(models.Model):
     title = models.CharField(max_length=255, default="New Chat")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete flag: if True, the session is hidden from the UI but kept in the database
+    is_deleted = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.user.username} - {self.title}"
@@ -26,6 +28,8 @@ class ChatMessage(models.Model):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+    # Soft delete flag: if True, the message is hidden from the UI but kept in the database
+    is_deleted = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['created_at']
