@@ -448,9 +448,10 @@ Each branch builds on the previous one. This section records **what changed in e
 
 | Branch | Status | Summary |
 |--------|--------|---------|
-| `genai-chat-001-basic` | ✅ Done | Basic streaming chatbot (Django + DRF + Ollama) |
-| `genai-chat-002-system-prompt` | ✅ Done | Improved system prompt and fixed identity confusion |
-| `genai-chat-003-rag` | ✅ Done | Implemented Embeddings, ChromaDB, PDF upload, and Chat Memory (RAG) |
+| [`genai-chat-001-basic`](README.001.md) | ✅ Done | Basic streaming chatbot (Django + DRF + Ollama) |
+| [`genai-chat-002-system-prompt`](README.002.md) | ✅ Done | Improved system prompt and fixed identity confusion |
+| [`genai-chat-003-rag`](README.003.md) | ✅ Done | Implemented Embeddings, ChromaDB, PDF upload, and Chat Memory (RAG) |
+| [`genai-chat-004-clean-up`](README.004.md) | 🚧 In Progress | Fixing architecture bugs, adding Session Isolation, and Show Sources (Citations) |
 ---
 
 ### Branching Strategy & Git Workflow
@@ -616,6 +617,25 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Added `debug_embeddings` method to `LLMService`.
 - Hooked the debug method into `ChatAPIView`.
 - Installed `chromadb`, `numpy`, and `ollama` Python packages.
+
+### Branch 004: `genai-chat-004-clean-up` 🚧
+
+**Goal:** Transform the prototype into a secure, robust application by fixing architecture flaws, isolating user sessions, and adding Source Citations.
+
+📄 **[Click here to read the detailed analysis for Branch 004 (README.004.md)](README.004.md)**
+
+**Scope**
+- Implement `get_llm_service()` Singleton and `asyncio.to_thread` for performance.
+- Move settings to `local_settings.py`.
+- Add `X-Session-Id` for data isolation (memory and documents).
+- Split ChromaDB collections (`documents_v2` and `chat_memory_v2`).
+- Add `RAG_MAX_DISTANCE` cutoff and fix the "AI identity" hallucination.
+- Implement "Show Sources" (displaying filename and page number).
+
+**Changes made:** 
+- Created `local_settings.py`.
+- Updated `LLMService`, `RAGEngine`, and `ChatAPIView`.
+- Added UI badge for sources in `app.js`.
 ---
 
 ### Template for future branches
