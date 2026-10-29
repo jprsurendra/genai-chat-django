@@ -559,7 +559,7 @@ git push -u origin genai-chat-002-system-prompt
 
 ---
 
-### Branch 002: `genai-chat-002-system-prompt` 🚧
+### Branch 002: `genai-chat-002-system-prompt` ✅
 
 **Goal:** Understand how the system prompt affects model behaviour and make answers more reliable without changing the model.
 
@@ -599,7 +599,7 @@ This screenshot is a perfect example of the difference between small local AI mo
 📄 **[Click here to read the detailed analysis for Branch 002 (README.002.md)](README.002.md)**
 
 
-### Branch 003: `genai-chat-003-rag` 🚧
+### Branch 003: `genai-chat-003-rag` ✅
 
 **Goal:** Implement Embeddings and Cosine Similarity to understand the mathematical foundation of RAG.
 
@@ -618,7 +618,7 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Hooked the debug method into `ChatAPIView`.
 - Installed `chromadb`, `numpy`, and `ollama` Python packages.
 
-### Branch 004: `genai-chat-004-clean-up` 🚧
+### Branch 004: `genai-chat-004-clean-up` ✅
 
 **Goal:** Transform the prototype into a secure, robust application by fixing architecture flaws, isolating user sessions, and adding Source Citations.
 

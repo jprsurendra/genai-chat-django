@@ -5,6 +5,105 @@ To transform the application from a prototype into a secure, multi-user platform
 
 ---
 
+## ⚙️ Database Migration (MySQL Setup)
+
+To run this branch you must move from the default SQLite to MySQL. The steps below were written for Ubuntu/Debian.
+
+### 1. Install MySQL Server
+
+```bash
+sudo apt update
+sudo apt install mysql-server
+sudo systemctl start mysql
+```
+
+### 2. Create the database and user
+
+Log into MySQL as root:
+
+```bash
+sudo mysql
+```
+
+Then run the following SQL (replace `your_password_here` with a strong password):
+
+```sql
+CREATE DATABASE genai_chat_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'genai_user'@'localhost' IDENTIFIED BY 'your_password_here';
+GRANT ALL PRIVILEGES ON genai_chat_db.* TO 'genai_user'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+> 💡 `utf8mb4` is important here: this app stores Hindi text and emojis in chat messages, and a plain `utf8` (3-byte) database can reject emojis.
+
+### 3. Install the MySQL client for Python
+
+Activate your virtual environment and install the driver:
+
+```bash
+pip install mysqlclient
+```
+
+If the install fails, install the system dependencies first and try again:
+
+```bash
+sudo apt install default-libmysqlclient-dev build-essential pkg-config
+```
+
+Add `mysqlclient` to `requirements.txt` as well, so other machines get it too.
+
+### 4. Configure `.env`
+
+Add your database credentials to the `.env` file in the project root:
+
+```env
+DB_NAME=genai_chat_db
+DB_USER=genai_user
+DB_PASSWORD=your_password_here
+DB_HOST=localhost
+DB_PORT=3306
+```
+
+> ⚠️ `.env` holds a real password. Keep it out of Git (it is already in `.gitignore`).
+
+### 5. Update `local_settings.py`
+
+Make sure `local_settings.py` reads these variables. It needs `import os`, and the `.env` file must be loaded (for example with `load_dotenv()`) before this block runs:
+
+```python
+import os
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.getenv('DB_NAME', 'genai_chat_db'),
+        'USER': os.getenv('DB_USER', 'genai_user'),
+        'PASSWORD': os.getenv('DB_PASSWORD', ''),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '3306'),
+        'OPTIONS': {'charset': 'utf8mb4'},
+    }
+}
+```
+
+### 6. Run migrations
+
+Apply the migrations to create the tables in MySQL:
+
+```bash
+python manage.py makemigrations
+python manage.py migrate
+```
+
+To confirm the connection works, you can open a database shell:
+
+```bash
+python manage.py dbshell
+```
+
+---
+
 ## 🛠️ What Changed in this Branch?
 
 ### 1. Architecture: Separation of Concerns
@@ -67,5 +166,6 @@ To transform the application from a prototype into a secure, multi-user platform
 2. **सुरक्षा:** `X-Session-Id` की जगह JWT टोकन का उपयोग किया। अब हर रिक्वेस्ट के साथ `Authorization: Bearer <token>` हेडर जाता है। बिना लॉगिन के कोई भी चैट नहीं कर सकता।
 3. **चैट हिस्ट्री:** अब यूज़र के सारे मैसेज और AI के जवाब MySQL डेटाबेस में सेव होते हैं। पेज रिफ्रेश करने पर भी चैट नहीं जाएगी।
 4. **बग्स:** स्ट्रीमिंग के दौरान आने वाला `SynchronousOnlyOperation` एरर ठीक किया, और फाइल अपलोड करते समय टेम्परेरी नाम के बजाय असली फाइल का नाम सेव करने का लॉजिक जोड़ा।
+5. **MySQL setup:** Ubuntu पर `mysql-server` install करें, `utf8mb4` वाला database और user बनाएँ, `mysqlclient` install करें, `.env` में DB की details डालें और `python manage.py migrate` चलाएँ। (`utf8mb4` इसलिए ज़रूरी है ताकि Hindi text और emojis सही से save हों।)
 
 </details>
