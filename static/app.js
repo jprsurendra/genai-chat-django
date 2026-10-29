@@ -10,6 +10,18 @@ const fileUpload = document.getElementById("fileUpload");
 let history = [];
 let isBusy = false;
 
+// ---- Session ID Management ----
+// Generates a unique ID and stores it in localStorage so the server can scope memory to this browser.
+function getSessionId() {
+  let sid = localStorage.getItem("genai_session_id");
+  if (!sid) {
+    sid = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2);
+    localStorage.setItem("genai_session_id", sid);
+  }
+  return sid;
+}
+
+// ---- UI Helpers ----
 function escapeHtml(s) {
   const d = document.createElement("div");
   d.textContent = s;
@@ -45,6 +57,7 @@ function addMessage(role, content, streaming = false) {
   return bubble;
 }
 
+// ---- Textarea Auto-resize ----
 input.addEventListener("input", () => {
   input.style.height = "auto";
   input.style.height = Math.min(input.scrollHeight, 120) + "px";
@@ -57,6 +70,7 @@ input.addEventListener("keydown", (e) => {
   }
 });
 
+// ---- Chat Submit ----
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (isBusy) return;
@@ -68,7 +82,6 @@ form.addEventListener("submit", async (e) => {
 
   isBusy = true;
   sendBtn.disabled = true;
-
   input.value = "";
   input.style.height = "auto";
 
@@ -79,8 +92,11 @@ form.addEventListener("submit", async (e) => {
   try {
     const resp = await fetch("/api/chat/stream", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, history, use_fast: useFast }),
+      headers: {
+        "Content-Type": "application/json",
+        "X-Session-Id": getSessionId() // <--- Send Session ID
+      },
+      body: JSON.stringify({ message: text, history: history.slice(-10), use_fast: useFast }),
     });
 
     if (!resp.ok) {
@@ -104,6 +120,7 @@ form.addEventListener("submit", async (e) => {
         if (!part.startsWith("data: ")) continue;
         const payload = part.slice(6).trim();
         if (payload === "[DONE]") continue;
+
         try {
           const data = JSON.parse(payload);
           if (data.error) throw new Error(data.error);
@@ -117,9 +134,8 @@ form.addEventListener("submit", async (e) => {
     }
 
     bubble.classList.remove("typing");
-
     if (full) {
-      history.push({ role: "user",      content: text });
+      history.push({ role: "user", content: text });
       history.push({ role: "assistant", content: full });
     } else {
       bubble.textContent = "(empty response)";
@@ -135,9 +151,7 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-// ---- Document upload (PDF / TXT) ----
-const ALLOWED_EXT = [".pdf", ".txt"];
-
+// ---- Document Upload ----
 uploadBtn.addEventListener("click", () => {
   if (isBusy) return;
   fileUpload.click();
@@ -146,13 +160,6 @@ uploadBtn.addEventListener("click", () => {
 fileUpload.addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file || isBusy) return;
-
-  const name = file.name.toLowerCase();
-  if (!ALLOWED_EXT.some((ext) => name.endsWith(ext))) {
-    addMessage("assistant", `Only ${ALLOWED_EXT.join(" and ")} files are supported.`);
-    fileUpload.value = "";
-    return;
-  }
 
   isBusy = true;
   sendBtn.disabled = true;
@@ -165,7 +172,11 @@ fileUpload.addEventListener("change", async (e) => {
     const formData = new FormData();
     formData.append("file", file);
 
-    const resp = await fetch("/api/upload", { method: "POST", body: formData });
+    const resp = await fetch("/api/upload", {
+      method: "POST",
+      headers: { "X-Session-Id": getSessionId() }, // <--- Send Session ID
+      body: formData
+    });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(data.detail || data.error || `Upload failed (${resp.status})`);
 
@@ -176,7 +187,7 @@ fileUpload.addEventListener("change", async (e) => {
     bubble.classList.add("error");
     bubble.textContent = `Error: ${err.message}`;
   } finally {
-    fileUpload.value = "";          // allow re-uploading the same file
+    fileUpload.value = "";
     isBusy = false;
     sendBtn.disabled = false;
     uploadBtn.disabled = false;
@@ -184,8 +195,18 @@ fileUpload.addEventListener("change", async (e) => {
   }
 });
 
-clearBtn.addEventListener("click", () => {
+// ---- Clear Button (Deletes Server Memory too) ----
+clearBtn.addEventListener("click", async () => {
   if (isBusy) return;
+
+  try {
+    // Tell the server to delete memory and documents for this session
+    await fetch("/api/chat", {
+      method: "DELETE",
+      headers: { "X-Session-Id": getSessionId() }
+    });
+  } catch (_) { /* ignore offline errors */ }
+
   history = [];
   chatBox.innerHTML = `
     <div class="welcome text-center text-muted py-5">
