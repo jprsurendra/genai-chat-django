@@ -1,3 +1,6 @@
+// ==========================================
+// 1. DOM Elements
+// ==========================================
 const chatBox   = document.getElementById("chatBox");
 const form      = document.getElementById("chatForm");
 const input     = document.getElementById("userInput");
@@ -6,21 +9,44 @@ const clearBtn  = document.getElementById("clearBtn");
 const modelSel  = document.getElementById("modelSelect");
 const uploadBtn = document.getElementById("uploadBtn");
 const fileUpload = document.getElementById("fileUpload");
+const logoutBtn = document.getElementById("logoutBtn");
+const navUsername = document.getElementById("navUsername");
 
 let history = [];
 let isBusy = false;
 
-// ---- Session ID Management ----
-function getSessionId() {
-  let sid = localStorage.getItem("genai_session_id");
-  if (!sid) {
-    sid = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2);
-    localStorage.setItem("genai_session_id", sid);
-  }
-  return sid;
+// ==========================================
+// 2. Authentication (JWT) Check
+// ==========================================
+const accessToken = localStorage.getItem("access_token");
+const username = localStorage.getItem("username");
+
+// If no token, redirect to login page immediately
+if (!accessToken) {
+    window.location.href = "/login/";
+} else {
+    if (navUsername) navUsername.textContent = username;
 }
 
-// ---- UI Helpers ----
+// Handle Logout
+logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("username");
+    window.location.href = "/login/";
+});
+
+// Helper to get Auth Headers for API requests
+function getAuthHeaders() {
+    return {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${localStorage.getItem("access_token")}`
+    };
+}
+
+// ==========================================
+// 3. UI Helpers
+// ==========================================
 function escapeHtml(s) {
   const d = document.createElement("div");
   d.textContent = s;
@@ -56,7 +82,7 @@ function addMessage(role, content, streaming = false) {
   return bubble;
 }
 
-// ---- Textarea Auto-resize ----
+// Auto-resize textarea
 input.addEventListener("input", () => {
   input.style.height = "auto";
   input.style.height = Math.min(input.scrollHeight, 120) + "px";
@@ -69,7 +95,9 @@ input.addEventListener("keydown", (e) => {
   }
 });
 
-// ---- Chat Submit (Streaming) ----
+// ==========================================
+// 4. Chat Submit (Streaming via SSE)
+// ==========================================
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (isBusy) return;
@@ -86,21 +114,21 @@ form.addEventListener("submit", async (e) => {
 
   addMessage("user", text);
   const bubble = addMessage("assistant", "", true);
-  
   let full = "";
   let sourcesText = "";
 
   try {
     const resp = await fetch("/api/chat/stream", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Session-Id": getSessionId()
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ message: text, history: history.slice(-10), use_fast: useFast }),
     });
 
     if (!resp.ok) {
+      if (resp.status === 401) {
+         window.location.href = "/login/"; // Token expired
+         return;
+      }
       const err = await resp.text().catch(() => resp.statusText);
       throw new Error(`${resp.status} ${err}`);
     }
@@ -125,13 +153,13 @@ form.addEventListener("submit", async (e) => {
         try {
           const data = JSON.parse(payload);
           if (data.error) throw new Error(data.error);
-          
-          // Receive Sources
+
+          // Capture Sources
           if (data.sources) {
             sourcesText = data.sources;
           }
-          
-          // Receive Streaming Text
+
+          // Stream Text
           if (data.delta) {
             full += data.delta;
             bubble.innerHTML = renderMarkdown(full);
@@ -142,8 +170,8 @@ form.addEventListener("submit", async (e) => {
     }
 
     bubble.classList.remove("typing");
-    
-    // Add Sources to UI
+
+    // Append Sources if any
     if (sourcesText) {
       const sourceDiv = document.createElement("div");
       sourceDiv.className = "mt-2";
@@ -168,7 +196,9 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-// ---- Document Upload ----
+// ==========================================
+// 5. Document Upload
+// ==========================================
 uploadBtn.addEventListener("click", () => {
   if (isBusy) return;
   fileUpload.click();
@@ -189,13 +219,21 @@ fileUpload.addEventListener("change", async (e) => {
     const formData = new FormData();
     formData.append("file", file);
 
+    // Note: Don't use getAuthHeaders() here because it sets 'Content-Type': 'application/json'
+    // For FormData, the browser must set the Content-Type automatically (multipart/form-data)
     const resp = await fetch("/api/upload", {
       method: "POST",
-      headers: { "X-Session-Id": getSessionId() },
+      headers: {
+          "Authorization": `Bearer ${localStorage.getItem("access_token")}`
+      },
       body: formData
     });
     const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(data.detail || data.error || `Upload failed (${resp.status})`);
+
+    if (!resp.ok) {
+        if (resp.status === 401) window.location.href = "/login/";
+        throw new Error(data.detail || data.error || `Upload failed (${resp.status})`);
+    }
 
     bubble.classList.remove("typing");
     bubble.innerHTML = renderMarkdown(data.message || "Document uploaded.");
@@ -212,14 +250,16 @@ fileUpload.addEventListener("change", async (e) => {
   }
 });
 
-// ---- Clear Button ----
+// ==========================================
+// 6. Clear Button (Deletes Server Memory)
+// ==========================================
 clearBtn.addEventListener("click", async () => {
   if (isBusy) return;
 
   try {
     await fetch("/api/chat", {
       method: "DELETE",
-      headers: { "X-Session-Id": getSessionId() }
+      headers: { "Authorization": `Bearer ${localStorage.getItem("access_token")}` }
     });
   } catch (_) { /* ignore offline errors */ }
 

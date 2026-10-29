@@ -452,7 +452,7 @@ Each branch builds on the previous one. This section records **what changed in e
 | [`genai-chat-002-system-prompt`](README.002.md) | ✅ Done | Improved system prompt and fixed identity confusion |
 | [`genai-chat-003-rag`](README.003.md) | ✅ Done | Implemented Embeddings, ChromaDB, PDF upload, and Chat Memory (RAG) |
 | [`genai-chat-004-clean-up`](README.004.md) | ✅ Done | Fixing architecture bugs, adding Session Isolation, and Show Sources (Citations) |
-| [`genai-chat-005-db-auth`](README.005.md) | 🚧 In Progress | Migrating to MySQL and implementing JWT Authentication |
+| [`genai-chat-005-db-auth`](README.005.md) | 🚧 In Progress | Migrated to MySQL, implemented JWT Auth, and separated UI from API |
 ---
 
 
@@ -636,6 +636,24 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Created `local_settings.py`.
 - Updated `LLMService`, `RAGEngine`, and `ChatAPIView`.
 - Added UI badge for sources in `app.js`.
+
+### Branch 005: `genai-chat-005-db-auth` 🚧
+
+**Goal:** Add security, persistent storage, and separate the UI from the API by migrating to MySQL and implementing JWT Authentication.
+
+📄 **[Click here to read the detailed analysis for Branch 005 (README.005.md)](README.005.md)**
+
+**Scope**
+- Migrate database from SQLite to MySQL.
+- Implement JWT Authentication (Register, Login, Logout).
+- Separate the codebase into `accounts` (Auth API), `chat` (Chat API), and `web_ui` (Frontend).
+- Save Chat History to the database.
+
+**Changes made:** 
+- Created `accounts` and `web_ui` Django apps.
+- Updated `ChatSession` and `ChatMessage` models.
+- Replaced `X-Session-Id` with JWT Token authentication.
+- Fixed `SynchronousOnlyOperation` bug in async streaming.
 ---
 
 ### Template for future branches

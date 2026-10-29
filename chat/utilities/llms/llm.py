@@ -147,8 +147,11 @@ class LLMService:
             raise e
 
 
-    def upload_document(self, file_path: str, session_id: str) -> str:
-        return self.rag_engine.process_and_store_file(file_path, session_id)
+    # def upload_document(self, file_path: str, session_id: str) -> str:
+    #     return self.rag_engine.process_and_store_file(file_path, session_id)
+    def upload_document(self, file_path: str, original_filename: str, user_id: str) -> str:
+        """Passes uploaded file to RAG Engine."""
+        return self.rag_engine.process_and_store_file(file_path, original_filename, user_id)
 
     def clear_session(self, session_id: str) -> None:
         self.rag_engine.delete_session(session_id)

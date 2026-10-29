@@ -148,10 +148,72 @@ class RAGEngine:
         )
         return f"Successfully uploaded and embedded {len(chunks)} chunks from the document."
 
-    def process_and_store_file(self, file_path: str, session_id: str) -> str:
+    # def process_and_store_file(self, file_path: str, session_id: str) -> str:
+    #     """Reads a PDF/TXT file, chunks it, and stores embeddings with metadata."""
+    #     lower = file_path.lower()
+    #     filename = os.path.basename(file_path)
+    #     text = ""
+    #     page_number = 1  # For TXT files
+    #
+    #     if lower.endswith(".pdf"):
+    #         reader = PdfReader(file_path)
+    #         pages = []
+    #         for i, page in enumerate(reader.pages):
+    #             page_text = page.extract_text() or ""
+    #             # Add a hidden tag to track page numbers during chunking
+    #             pages.append(f"[PAGE_{i + 1}]{page_text}")
+    #         text = "\n".join(pages)
+    #     elif lower.endswith(".txt"):
+    #         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+    #             text = f.read()
+    #     else:
+    #         return "Unsupported file format. Please upload PDF or TXT."
+    #
+    #     if not text.strip():
+    #         return "File is empty or could not be read."
+    #
+    #     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50, length_function=len)
+    #     raw_chunks = splitter.split_text(text)
+    #
+    #     chunks = []
+    #     metadatas = []
+    #     ids = []
+    #
+    #     current_page = 1
+    #
+    #     for chunk in raw_chunks:
+    #         if not chunk.strip():
+    #             continue
+    #
+    #         # Extract page number if the tag is in this chunk
+    #         page_match = re.search(r"\[PAGE_(\d+)\]", chunk)
+    #         if page_match:
+    #             current_page = int(page_match.group(1))
+    #             # Remove the tag from the actual text shown to the LLM
+    #             chunk = re.sub(r"\[PAGE_\d+\]", "", chunk).strip()
+    #
+    #         if not chunk:
+    #             continue
+    #
+    #         chunks.append(chunk)
+    #         metadatas.append({
+    #             "session_id": session_id,
+    #             "filename": filename,
+    #             "page": current_page
+    #         })
+    #         ids.append(hashlib.sha1(f"{session_id}:{filename}:{current_page}:{chunk}".encode("utf-8")).hexdigest())
+    #
+    #     self.documents.upsert(
+    #         documents=chunks,
+    #         ids=ids,
+    #         metadatas=metadatas,
+    #     )
+    #     return f"Successfully uploaded and embedded {len(chunks)} chunks from {filename}."
+    def process_and_store_file(self, file_path: str, original_filename: str, user_id: str) -> str:
         """Reads a PDF/TXT file, chunks it, and stores embeddings with metadata."""
         lower = file_path.lower()
-        filename = os.path.basename(file_path)
+        filename = original_filename  # <-- Use the original filename passed from the view
+
         text = ""
         page_number = 1  # For TXT files
 
@@ -197,18 +259,21 @@ class RAGEngine:
 
             chunks.append(chunk)
             metadatas.append({
-                "session_id": session_id,
+                "session_id": user_id,  # We use user_id as session_id for RAG
                 "filename": filename,
                 "page": current_page
             })
-            ids.append(hashlib.sha1(f"{session_id}:{filename}:{current_page}:{chunk}".encode("utf-8")).hexdigest())
+            # Generate a unique ID based on user, filename, page, and content
+            ids.append(hashlib.sha1(f"{user_id}:{filename}:{current_page}:{chunk}".encode("utf-8")).hexdigest())
 
+        # Upsert (Update or Insert) to ChromaDB
         self.documents.upsert(
             documents=chunks,
             ids=ids,
             metadatas=metadatas,
         )
         return f"Successfully uploaded and embedded {len(chunks)} chunks from {filename}."
+
 
     @staticmethod
     def is_memorable(content: str) -> bool:

@@ -29,18 +29,42 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # ==========================================
 # DEFAULT DJANGO SETTINGS
 # ==========================================
+# INSTALLED_APPS = [
+#     "django.contrib.contenttypes",
+#     "django.contrib.staticfiles",
+#     "rest_framework",
+#     "chat",
+# ]
 INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
     "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
-    "chat",
+    "rest_framework_simplejwt",
+    "accounts",  # Auth API
+    "chat",      # Chat & RAG API
+    "web_ui",    # Frontend UI (New)
 ]
+
+# MIDDLEWARE = [
+#     "django.middleware.security.SecurityMiddleware",
+#     "whitenoise.middleware.WhiteNoiseMiddleware",
+#     "django.middleware.common.CommonMiddleware",
+# ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",     # <-- required
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",  # <-- required
+    "django.contrib.messages.middleware.MessageMiddleware",     # <-- required
 ]
+
 
 ROOT_URLCONF = 'config.urls'
 
@@ -50,7 +74,11 @@ TEMPLATES = [
         "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
-            "context_processors": [],
+            "context_processors": [
+                "django.template.context_processors.request",           # <--  Required
+                "django.contrib.auth.context_processors.auth",          # <--  Required
+                "django.contrib.messages.context_processors.messages",  # <-- Required
+            ],
         },
     },
 ]
@@ -58,22 +86,29 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
 
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / "static"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# REST_FRAMEWORK = {
+#     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+#     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
+#     "DEFAULT_AUTHENTICATION_CLASSES": [],
+#     "DEFAULT_PERMISSION_CLASSES": [],
+#     "UNAUTHENTICATED_USER": None,
+# }
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
-    "DEFAULT_PERMISSION_CLASSES": [],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework_simplejwt.authentication.JWTAuthentication",],
+    "DEFAULT_PERMISSION_CLASSES": [ "rest_framework.permissions.IsAuthenticated",],
     "UNAUTHENTICATED_USER": None,
 }
 
