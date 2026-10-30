@@ -1,7 +1,7 @@
 # Branch 005: `genai-chat-005-db-auth` 🚧
 
 **Goal:** 
-To transform the application from a prototype into a secure, multi-user platform. This branch introduces **MySQL** for persistent data storage, **JWT Authentication** for secure login/registration, and separates the **UI** from the **API** into distinct Django apps.
+To transform the application from a prototype into a secure, multi-user platform. This branch introduces **MySQL** for persistent data storage, **JWT Authentication** for secure login/registration, and separates the **UI** from the **API** into distinct Django apps. It also adds chat history management (rename and delete) and permanent file storage for RAG.
 
 ---
 
@@ -102,6 +102,57 @@ To confirm the connection works, you can open a database shell:
 python manage.py dbshell
 ```
 
+### 🚨 Troubleshooting common migration errors
+
+While setting up the database you may run into the errors below. Both fixes **delete data**, so use them in development only.
+
+**Error 1: `It is impossible to add a non-nullable field 'file' to uploadeddocument without specifying a default.`**
+
+*Cause:* you added a new field (`file`) to a model, but the table already has rows, and Django does not know what value to put in the new column for them.
+
+*Fix:* if you do not care about the existing data (true during development), reset the `chat` app's migrations:
+
+1. Delete all files inside `chat/migrations/` except `__init__.py`.
+2. Drop the old tables and the old `chat` migration records in MySQL:
+
+   ```sql
+   USE genai_chat_db;
+   DROP TABLE chat_uploadeddocument;
+   DROP TABLE chat_chatmessage;
+   DROP TABLE chat_chatsession;
+   DELETE FROM django_migrations WHERE app = 'chat';
+   EXIT;
+   ```
+
+3. Recreate and apply the migrations:
+
+   ```bash
+   python manage.py makemigrations chat
+   python manage.py migrate
+   ```
+
+> ⚠️ Delete only the `chat` rows from `django_migrations`. If you drop the whole `django_migrations` table, Django forgets that the other tables (`auth_user`, `django_content_type`, ...) already exist, and you will get Error 2.
+
+**Error 2: `MySQLdb.OperationalError: (1050, "Table 'django_content_type' already exists")`**
+
+*Cause:* the `django_migrations` table was deleted, so Django thinks this is a fresh start, but the real tables (`django_content_type`, `auth_user`, ...) are still in the database from a previous run.
+
+*Fix:* drop the whole database and recreate it clean:
+
+```sql
+DROP DATABASE genai_chat_db;
+CREATE DATABASE genai_chat_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+GRANT ALL PRIVILEGES ON genai_chat_db.* TO 'genai_user'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+Then run the migrations again:
+
+```bash
+python manage.py migrate
+```
+
 ---
 
 ## 🛠️ What Changed in this Branch?
@@ -115,13 +166,22 @@ python manage.py dbshell
 - **User Registration:** Users can register with a username, email, and password (with confirmation).
 - **JWT Tokens:** Upon successful login, the backend issues an `access` and `refresh` token. The frontend stores the `access` token in `localStorage` and attaches it to every API request via the `Authorization: Bearer <token>` header.
 - **Protected Endpoints:** All chat, upload, and history endpoints now require a valid JWT. Unauthenticated requests receive a `401 Unauthorized` response.
+- **Auto-Logout:** If a token is expired or invalid (401), the frontend automatically redirects the user to the login page.
 
-### 3. Persistent Chat History (MySQL)
+### 3. Persistent Chat History & Management
 - **Django Models:** Created `ChatSession`, `ChatMessage`, and `UploadedDocument` models.
 - **Auto-Save:** When a user sends a message and the AI replies, both messages are saved to MySQL under the user's `ChatSession`.
 - **History API:** A new `/api/chat/history` endpoint fetches past conversations for the logged-in user.
+- **Rename & Delete:** Users can rename a chat (`PATCH` request) or soft-delete it (`DELETE` request). Soft delete means the data stays in the database but is hidden from the UI.
 
-### 4. UI/UX Improvements
+### 4. Permanent File Storage (User-Based)
+- **User Folders:** Uploaded files are saved permanently in `media/documents/user_<id>/`.
+- **Database Link:** The file path and URL are stored in the `UploadedDocument` model.
+- **UI Display:** Files appear as chat bubbles (with timestamps) in the history, and users can click them to download.
+
+> 💡 Add `media/` to `.gitignore`. Uploaded user files should not end up in the repository.
+
+### 5. UI/UX Improvements
 - **Login/Register Page:** A clean Bootstrap interface with tabs for Login and Register. Includes client-side validation for password matching.
 - **Session Management:** The frontend checks for a token on page load. If missing or expired, it redirects to the login page.
 - **Logout Button:** Clears tokens from `localStorage` and redirects to the login screen.
@@ -133,6 +193,8 @@ python manage.py dbshell
 2. **Upload File Name:** Fixed the issue where temporary file names (e.g., `tmp123.pdf`) were saved instead of the original filename. `original_filename` is now passed through the view to the RAG engine.
 3. **Missing Migrations:** Added `django.contrib.admin`, `auth`, and `sessions` to `INSTALLED_APPS` and updated `MIDDLEWARE` to prevent `SystemCheckError`.
 4. **Template Paths:** Correctly mapped the new `web_ui` templates (`chat.html` and `login.html`).
+5. **Media URL Link:** Fixed the download link for attachments. The frontend now makes sure the link starts with `/media/`, so Django serves the file instead of returning a `404 Page not found`.
+6. **Attachment Ordering:** Fixed attachments appearing at the bottom of the chat. The frontend now combines messages and attachments into one array, sorts them by timestamp, and renders them in chronological order.
 
 ---
 
@@ -142,14 +204,15 @@ python manage.py dbshell
 2. **JWT vs. Session ID:** The previous `X-Session-Id` was just a random string in the browser (data scoping). JWT is **identity verification**—it is cryptographically signed by the server, so it cannot be spoofed.
 3. **Separation of Apps:** By splitting `web_ui`, `accounts`, and `chat`, the codebase is much easier to maintain. If you wanted to switch to React later, you would only delete `web_ui` and keep the APIs intact.
 4. **Async + DB:** Django ORM is synchronous. When you are in an `async def` function (like SSE streaming), you must use `sync_to_async` to interact with the database, or the ASGI server will crash.
+5. **File storage best practices:** Never save uploads in the project root or in one flat folder. A layout like `media/documents/user_<id>/` keeps things organised and makes it easy to delete all files of a user if they delete their account.
 
 ---
 
 ## 🚀 Next Steps for Branch 006
-- [ ] **Chat Sidebar UI:** Display the list of past chat sessions in a sidebar (like ChatGPT).
-- [ ] **Multiple Chat Sessions:** Allow users to create a "New Chat" and switch between them.
-- [ ] **Stop Generation Button:** Implement `AbortController` in JS to stop the AI mid-response.
 - [ ] **Advanced RAG:** Implement Hybrid Search (BM25 + Vector) and Query Rewriting.
+- [ ] **User Feedback:** Add 👍/👎 buttons on chat responses to collect data for evaluation.
+- [ ] **UI Polish:** Add a dark mode toggle and a loading spinner for file uploads.
+- [ ] **Stop Generation Button:** Implement `AbortController` in JS to stop the AI mid-response.
 
 ---
 
@@ -167,5 +230,10 @@ python manage.py dbshell
 3. **चैट हिस्ट्री:** अब यूज़र के सारे मैसेज और AI के जवाब MySQL डेटाबेस में सेव होते हैं। पेज रिफ्रेश करने पर भी चैट नहीं जाएगी।
 4. **बग्स:** स्ट्रीमिंग के दौरान आने वाला `SynchronousOnlyOperation` एरर ठीक किया, और फाइल अपलोड करते समय टेम्परेरी नाम के बजाय असली फाइल का नाम सेव करने का लॉजिक जोड़ा।
 5. **MySQL setup:** Ubuntu पर `mysql-server` install करें, `utf8mb4` वाला database और user बनाएँ, `mysqlclient` install करें, `.env` में DB की details डालें और `python manage.py migrate` चलाएँ। (`utf8mb4` इसलिए ज़रूरी है ताकि Hindi text और emojis सही से save हों।)
+6. **फाइल स्टोरेज:** अपलोड की गई फाइलें `media/documents/user_<id>/` फोल्डर में हमेशा के लिए सेव होती हैं, और chat में उनका download link भी दिखता है।
+7. **नई सुविधाएँ:** अब आप chat का नाम बदल सकते हैं (Rename) और उसे delete कर सकते हैं। Delete "soft delete" है, यानी data database में रहता है पर UI में नहीं दिखता।
+
+**माइग्रेशन में आने वाली समस्या:**
+अगर `Table already exists` या `non-nullable field` जैसी error आए, तो इसका मतलब है कि database में पुराना data है। Development में सबसे आसान तरीका: `chat/migrations/` की सारी files delete करें (सिर्फ़ `__init__.py` छोड़कर), MySQL में `chat` की पुरानी tables drop करें और `django_migrations` में से सिर्फ़ `chat` वाली rows delete करें, फिर `makemigrations` और `migrate` चलाएँ। पूरी `django_migrations` table drop न करें, वरना `Table already exists` error आ जाएगी। यह सब data मिटा देता है, इसलिए सिर्फ़ development में करें।
 
 </details>
