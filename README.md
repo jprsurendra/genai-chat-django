@@ -460,7 +460,7 @@ Each branch builds on the previous one. This section records **what changed in e
 | [`genai-chat-002-system-prompt`](README.002.md) | ✅ Done | Improved system prompt and fixed identity confusion |
 | [`genai-chat-003-rag`](README.003.md) | ✅ Done | Implemented Embeddings, ChromaDB, PDF upload, and Chat Memory (RAG) |
 | [`genai-chat-004-clean-up`](README.004.md) | ✅ Done | Fixing architecture bugs, adding Session Isolation, and Show Sources (Citations) |
-| [`genai-chat-005-db-auth`](README.005.md) | 🚧 In Progress | Migrated to MySQL, implemented JWT Auth, and separated UI from API |
+| [`genai-chat-005-db-auth`](README.005.md) | ✅ Done | Migrated to MySQL, implemented JWT Auth, and separated UI from API |
 ---
 
 
@@ -472,7 +472,7 @@ We follow a simple **GitHub Flow**: `main` is always stable, and each feature li
 main ──●──────────────●──────────────────●────────────────●────────────────●──────▶
         \            / \                / \              / \              /
          001-basic ─●   002-prompt ───●   003-rag ─────●   004-cleanup ─● (005-db-auth)
-        (PR + CI ✅)    (PR + CI ✅)      (PR + CI ✅)    (PR + CI ✅)    🚧 In Progress
+        (PR + CI ✅)    (PR + CI ✅)      (PR + CI ✅)    (PR + CI ✅)    ✅ Done
           tag: v0.1.0     tag: v0.2.0        tag: v0.3.0      tag: v0.4.0
 ```
 
@@ -645,7 +645,7 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Updated `LLMService`, `RAGEngine`, and `ChatAPIView`.
 - Added UI badge for sources in `app.js`.
 
-### Branch 005: `genai-chat-005-db-auth` 🚧
+### Branch 005: `genai-chat-005-db-auth` ✅
 
 **Goal:** Add security, persistent storage, and separate the UI from the API by migrating to MySQL and implementing JWT Authentication.
 
