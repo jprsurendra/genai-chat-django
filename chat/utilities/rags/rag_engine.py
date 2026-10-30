@@ -11,6 +11,9 @@ from django.conf import settings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
+# Import BM25 for Hybrid Search
+from rank_bm25 import BM25Okapi
+
 logger = logging.getLogger(__name__)
 
 # Regex to validate session IDs (8-64 characters, alphanumeric, dashes, underscores)
@@ -63,30 +66,96 @@ class RAGEngine:
     # =====================================================================
 
     def _query(self, collection, query: str, session_id: str, top_k: int) -> list[dict]:
-        """Internal method to query a collection and filter by session and distance."""
+        """
+        Hybrid Search: Combines Vector Search (semantic) with BM25 (keyword).
+        """
         if collection.count() == 0:
             return []
 
-        res = collection.query(
+        # 1. Get ALL documents for this user from ChromaDB (to build the BM25 index)
+        all_res = collection.get(
+            where={"session_id": session_id},
+            include=["documents", "metadatas"],
+            limit=1000
+        )
+        all_docs = all_res.get("documents", [])
+        all_metas = all_res.get("metadatas", [])
+
+        if not all_docs:
+            return []
+
+        # 2. Build BM25 Index
+        tokenized_corpus = [doc.lower().split() for doc in all_docs]
+        bm25 = BM25Okapi(tokenized_corpus)
+        tokenized_query = query.lower().split()
+
+        bm25_scores = bm25.get_scores(tokenized_query)
+
+        # 3. Get Vector Search Scores from ChromaDB
+        vector_res = collection.query(
             query_texts=[query],
             n_results=top_k,
-            where={"session_id": session_id},  # Ensure data isolation
+            where={"session_id": session_id},
             include=["documents", "distances", "metadatas"],
         )
 
-        docs = (res.get("documents") or [[]])[0]
-        dists = (res.get("distances") or [[]])[0]
-        metas = (res.get("metadatas") or [[]])[0]
+        vector_docs = (vector_res.get("documents") or [[]])[0]
+        vector_dists = (vector_res.get("distances") or [[]])[0]
+        vector_metas = (vector_res.get("metadatas") or [[]])[0]
 
-        results = []
-        for doc, dist, meta in zip(docs, dists, metas):
-            if dist <= self.max_distance:
-                results.append({
-                    "text": doc,
-                    "filename": meta.get("filename", "Memory"),
-                    "page": meta.get("page", 1)
-                })
-        return results
+        # 4. Combine Scores
+        combined_results = []
+
+        for i, doc in enumerate(all_docs):
+            if doc in vector_docs:
+                idx = vector_docs.index(doc)
+                vector_dist = vector_dists[idx]
+                meta = vector_metas[idx]
+            else:
+                vector_dist = 1.0
+                meta = all_metas[i]
+
+            # Normalize BM25 score
+            normalized_bm25 = min(bm25_scores[i] / 5.0, 1.0) if bm25_scores[i] > 0 else 0.0
+
+            # Convert distance to similarity (0 to 1)
+            vector_score = 1.0 - vector_dist
+
+            # Hybrid Score (60% Vector, 40% BM25)
+            hybrid_score = (0.6 * vector_score) + (0.4 * normalized_bm25)
+
+            combined_results.append({
+                "text": doc,
+                "filename": meta.get("filename", "Memory"),
+                "page": meta.get("page", 1),
+                "hybrid_score": hybrid_score,
+                "vector_dist": vector_dist
+            })
+
+        # 5. Sort by Hybrid Score
+        combined_results.sort(key=lambda x: x["hybrid_score"], reverse=True)
+
+        # 🔥 DEBUG: Print top 3 scores
+        print("\n[DEBUG] Top Hybrid Scores:")
+        for r in combined_results[:3]:
+            print(
+                f" - Score: {r['hybrid_score']:.4f} | Vector Dist: {r['vector_dist']:.4f} | Text: {r['text'][:30]}...")
+
+        # 6. Filter and return top_k
+        final_results = []
+        for res in combined_results[:top_k]:
+            # Strict Filter: If hybrid score is too low, reject it.
+            if res["hybrid_score"] < 0.35:
+                print(f"   [DEBUG] Rejected with score {res['hybrid_score']:.4f}")
+                continue
+
+            final_results.append({
+                "text": res["text"],
+                "filename": res["filename"],
+                "page": res["page"]
+            })
+
+        return final_results
 
     def retrieve_documents(self, query: str, session_id: str, top_k: int = 3) -> list[dict]:
         """Retrieves relevant text chunks and their metadata (filename, page) from uploaded documents."""
@@ -95,38 +164,6 @@ class RAGEngine:
     def retrieve_memories(self, query: str, session_id: str, top_k: int = 3) -> list[dict]:
         """Retrieves relevant past statements made by the user."""
         return self._query(self.memory, query, session_id, top_k)
-
-    def process_and_store_file_old(self, file_path: str, session_id: str) -> str:
-        """Reads a PDF/TXT file, chunks it, and stores embeddings in ChromaDB."""
-        lower = file_path.lower()
-        text = ""
-
-        # Extract text based on file type
-        if lower.endswith(".pdf"):
-            reader = PdfReader(file_path)
-            text = "\n".join((page.extract_text() or "") for page in reader.pages)
-        elif lower.endswith(".txt"):
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                text = f.read()
-        else:
-            return "Unsupported file format. Please upload PDF or TXT."
-
-        if not text.strip():
-            return "File is empty or could not be read."
-
-        # Split text into manageable chunks
-        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50, length_function=len)
-        chunks = [c for c in splitter.split_text(text) if c.strip()]
-
-        # Deterministic IDs prevent duplicate uploads of the same file
-        ids = [hashlib.sha1(f"{session_id}:{c}".encode("utf-8")).hexdigest() for c in chunks]
-
-        self.documents.upsert(
-            documents=chunks,
-            ids=ids,
-            metadatas=[{"session_id": session_id}] * len(chunks),
-        )
-        return f"Successfully uploaded and embedded {len(chunks)} chunks from the document."
 
     def process_and_store_file(self, file_path: str, original_filename: str, user_id: str) -> str:
         """Reads a PDF/TXT file, chunks it, and stores embeddings with metadata."""
