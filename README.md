@@ -4,6 +4,14 @@ A minimal, fully local **GenAI chat application** built with **Django**, **Djang
 
 Runs entirely on your machine — no cloud, no API keys, no cost.
 
+## 🖼️ Current Status
+
+This is how the app looks today (branch `genai-chat-005-db-auth`): a signed-in user, a sidebar with past chats that can be renamed or deleted, the model selector, a document attached to the conversation, and answers streamed from a local model.
+
+[![GenAI Chat — current UI](docs/screenshot_005.png)](docs/screenshot_005.png)
+
+*Main screen of the app: [`docs/screenshot_005.png`](docs/screenshot_005.png)*
+
 ---
 
 ## ✨ Features

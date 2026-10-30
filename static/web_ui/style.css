@@ -78,3 +78,7 @@
   background: #f8d7da;
   color: #842029;
 }
+
+.message-time {
+  user-select: none;
+}

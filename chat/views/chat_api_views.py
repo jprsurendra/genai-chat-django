@@ -6,7 +6,7 @@ import tempfile
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.http import StreamingHttpResponse
-from asgiref.sync import async_to_sync
+from asgiref.sync import async_to_sync, sync_to_async
 from pydantic import ValidationError
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -14,10 +14,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from asgiref.sync import async_to_sync, sync_to_async
+
 from chat.dtos import ChatRequest
 from chat.utilities import check_rate_limit, get_llm_service
-from chat.models import ChatSession, ChatMessage
+from chat.models import ChatSession, ChatMessage, UploadedDocument
 
 logger = logging.getLogger(__name__)
 GENERIC_ERROR = "Something went wrong while processing your request."
@@ -28,8 +28,6 @@ class ChatAPIView(APIView):
     Base View for Chat API (Non-Streaming).
     Requires a valid JWT token for access.
     """
-    # authentication_classes = []
-    # permission_classes = [IsAuthenticated]
     # JWT Authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -83,12 +81,17 @@ class ChatAPIView(APIView):
         # =====================================================================
 
         # 1. Create or get session
-        session, _ = ChatSession.objects.get_or_create(user=request.user, title="Default Chat")
+        session_id = request.data.get("session_id")
+        if session_id:
+            session, _ = ChatSession.objects.get_or_create(id=session_id, user=request.user)
+        else:
+            title = req.message[:30] + "..." if len(req.message) > 30 else req.message
+            session = ChatSession.objects.create(user=request.user, title=title)
 
         # 2. Save User Message to DB
         ChatMessage.objects.create(session=session, role="user", content=req.message)
 
-        # 3. Get AI Response    Call LLM (Non-streaming)
+        # 3. Get AI Response (Call LLM Non-streaming)
         response = self.generate_post_response(req, user_id)
 
         # 4. Save AI Reply to DB
@@ -107,8 +110,9 @@ class ChatAPIView(APIView):
 
         try:
             self.llm_service.clear_session(str(user_id))
-            # Also clear chat history from MySQL for this user
-            ChatSession.objects.filter(user=request.user).delete()
+            # Soft delete all chat history from MySQL for this user
+            ChatSession.objects.filter(user=request.user).update(is_deleted=True)
+            ChatMessage.objects.filter(session__user=request.user).update(is_deleted=True)
         except Exception:
             logger.exception("Clearing session failed")
             return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -135,40 +139,33 @@ class ChatStreamAPIView(ChatAPIView):
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create DB Session and save User Message
-        session, _ = ChatSession.objects.get_or_create(user=request.user, title="Default Chat")
+        # Create DB Session or get existing one
+        session_id = request.data.get("session_id")
+        if session_id:
+            session, _ = ChatSession.objects.get_or_create(id=session_id, user=request.user)
+        else:
+            title = req.message[:30] + "..." if len(req.message) > 30 else req.message
+            session = ChatSession.objects.create(user=request.user, title=title)
+
+        # Save User Message
         ChatMessage.objects.create(session=session, role="user", content=req.message)
 
         service = self.llm_service
 
-        # async def event_gen():
-        #     full_reply = ""
-        #     try:
-        #         async for delta in service.stream_reply(
-        #                 req.message, req.history, str(user_id), req.use_fast
-        #         ):
-        #             full_reply += delta
-        #             yield f"data: {json.dumps({'delta': delta})}\n\n".encode()
-        #         yield b"data: [DONE]\n\n"
-        #
-        #         # Save AI reply to DB after streaming finishes
-        #         if full_reply:
-        #             # Use sync_to_async if needed, but since we are in an async context
-        #             # and DB operations are synchronous, it's safe enough for this demo.
-        #             ChatMessage.objects.create(session=session, role="assistant", content=full_reply)
-        #
-        #     except Exception as e:
-        #         logger.error(f"Streaming exception: {e}", exc_info=True)
-        #         yield f"data: {json.dumps({'error': GENERIC_ERROR})}\n\n".encode()
         async def event_gen():
             full_reply = ""
             try:
+                # Send the new session ID to the frontend immediately
+                yield f"data: {json.dumps({'session_id': session.id})}\n\n"
+
                 async for delta in service.stream_reply(
                         req.message, req.history, str(user_id), req.use_fast
                 ):
                     full_reply += delta
-                    yield f"data: {json.dumps({'delta': delta})}\n\n".encode()
-                yield b"data: [DONE]\n\n"
+                    # Note: Do NOT use .encode() here. Return a string.
+                    yield f"data: {json.dumps({'delta': delta})}\n\n"
+
+                yield "data: [DONE]\n\n"
 
                 # Save AI reply to DB after streaming finishes
                 if full_reply:
@@ -181,7 +178,7 @@ class ChatStreamAPIView(ChatAPIView):
 
             except Exception as e:
                 logger.error(f"Streaming exception: {e}", exc_info=True)
-                yield f"data: {json.dumps({'error': GENERIC_ERROR})}\n\n".encode()
+                yield f"data: {json.dumps({'error': GENERIC_ERROR})}\n\n"
 
         resp = StreamingHttpResponse(event_gen(), content_type="text/event-stream")
         resp["Cache-Control"] = "no-cache"
@@ -192,29 +189,81 @@ class ChatStreamAPIView(ChatAPIView):
 class ChatHistoryAPIView(APIView):
     """
     API to fetch chat history for the logged-in user.
+    Supports fetching all sessions, a specific session, or soft-deleting sessions.
     """
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        sessions = ChatSession.objects.filter(user=request.user).order_by('-updated_at')
-        data = []
-        for s in sessions:
-            messages = s.messages.all().values('role', 'content', 'created_at')
-            data.append({
-                "id": s.id,
-                "title": s.title,
-                "messages": list(messages)
-            })
+        session_id = request.query_params.get("session_id")
+
+        if session_id:
+            # Fetch a specific session and its messages
+            try:
+                session = ChatSession.objects.get(id=session_id, user=request.user, is_deleted=False)
+                # Ensure messages are fetched correctly
+                messages = session.messages.filter(is_deleted=False).values('role', 'content', 'created_at')
+
+                # Fetch documents for this session
+                documents = session.documents.all().values('id', 'filename', 'file', 'uploaded_at')
+
+                return Response({
+                    "id": session.id,
+                    "title": session.title,
+                    "messages": list(messages),
+                    "documents": list(documents)
+                })
+            except ChatSession.DoesNotExist:
+                return Response({"error": "Session not found"}, status=404)
+
+        # Fetch all active sessions for the sidebar
+        sessions = ChatSession.objects.filter(user=request.user, is_deleted=False).order_by('-updated_at')
+        data = [{"id": s.id, "title": s.title, "updated_at": s.updated_at} for s in sessions]
         return Response({"sessions": data})
+
+    def delete(self, request):
+        """
+        Soft delete a session or all sessions.
+        Pass ?session_id=123 to delete a specific session, or omit it to delete all.
+        """
+        session_id = request.query_params.get("session_id")
+
+        if session_id:
+            # Soft delete a specific session
+            ChatSession.objects.filter(id=session_id, user=request.user).update(is_deleted=True)
+            ChatMessage.objects.filter(session_id=session_id).update(is_deleted=True)
+            return Response({"message": "Chat deleted successfully."})
+        else:
+            # Soft delete all chats for the user
+            ChatSession.objects.filter(user=request.user).update(is_deleted=True)
+            ChatMessage.objects.filter(session__user=request.user).update(is_deleted=True)
+            return Response({"message": "All chats deleted."})
+
+    def patch(self, request):
+        """
+        Rename a specific chat session.
+        Expected payload: {"title": "New Chat Name"}
+        Expected query param: ?session_id=123
+        """
+        session_id = request.query_params.get("session_id")
+        new_title = request.data.get("title")
+
+        if not session_id or not new_title:
+            return Response({"error": "session_id and title are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            session = ChatSession.objects.get(id=session_id, user=request.user, is_deleted=False)
+            session.title = new_title[:255]  # Limit title length
+            session.save()
+            return Response({"message": "Chat renamed successfully.", "new_title": session.title})
+        except ChatSession.DoesNotExist:
+            return Response({"error": "Session not found"}, status=status.HTTP_404_NOT_FOUND)
 
 
 class UploadDocumentAPIView(APIView):
     """
     View to handle PDF/TXT uploads.
     """
-    # authentication_classes = []
-    # permission_classes = [IsAuthenticated]
     # JWT Authentication Add
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -246,17 +295,40 @@ class UploadDocumentAPIView(APIView):
         if uploaded_file.size > settings.RAG_MAX_UPLOAD_BYTES:
             return Response({"detail": "File too large."}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
-            for chunk in uploaded_file.chunks():
-                temp_file.write(chunk)
-            temp_file_path = temp_file.name
+        # 1. Get Session (if any)
+        session_id = request.data.get("session_id")
+        chat_session = None
+        if session_id:
+            chat_session = ChatSession.objects.filter(id=session_id, user=request.user).first()
+
+        # 2. Create the Database Entry FIRST and let Django save the file
+        # (Django will automatically use the 'user_directory_path' function from models.py)
+        doc = UploadedDocument.objects.create(
+            user=request.user,
+            chat_session=chat_session,
+            file=uploaded_file,  # Pass the file directly
+            filename=safe_name
+        )
+
+        # Now the file is saved at: media/documents/user_<id>/filename.ext
+        file_path = doc.file.path
 
         try:
-            # Pass original filename to RAG Engine
-            result_message = self.llm_service.upload_document(temp_file_path, safe_name, str(user_id))
-            return Response({"message": result_message}, status=status.HTTP_200_OK)
+            # 3. Pass the saved file path to RAG Engine for processing
+            result_message = self.llm_service.upload_document(file_path, safe_name, str(user_id))
+
+            # Extract chunk count from the result message (optional)
+            doc.chunk_count = result_message.count('chunks')
+            doc.save()
+
+            return Response({
+                "message": result_message,
+                "file_url": doc.file.url,  # URL to download the file
+                "filename": safe_name
+            }, status=status.HTTP_200_OK)
+
         except Exception:
-            logger.exception("Upload failed")
+            logger.exception("Upload processing failed")
+            # If processing fails, delete the file and DB entry
+            doc.delete()
             return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        finally:
-            if os.path.exists(temp_file_path): os.remove(temp_file_path)
