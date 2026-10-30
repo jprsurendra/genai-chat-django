@@ -459,21 +459,32 @@ Each branch builds on the previous one. This section records **what changed in e
 | [`genai-chat-001-basic`](README.001.md) | ✅ Done | Basic streaming chatbot (Django + DRF + Ollama) |
 | [`genai-chat-002-system-prompt`](README.002.md) | ✅ Done | Improved system prompt and fixed identity confusion |
 | [`genai-chat-003-rag`](README.003.md) | ✅ Done | Implemented Embeddings, ChromaDB, PDF upload, and Chat Memory (RAG) |
-| [`genai-chat-004-clean-up`](README.004.md) | ✅ Done | Fixing architecture bugs, adding Session Isolation, and Show Sources (Citations) |
 | [`genai-chat-005-db-auth`](README.005.md) | ✅ Done | Migrated to MySQL, implemented JWT Auth, and separated UI from API |
+| [`genai-chat-006-rag-quality`](README.006.md) | 🚧 In Progress | Hybrid Search, Query Rewriting, and Evaluation |
+---
 ---
 
+### 📝 Quick Summaries
+
+- **Branch 001 (Basic):** Basic streaming chatbot (Django + DRF + Ollama).
+- **Branch 002 (Prompt):** Investigated AI hallucinations and improved the System Prompt.
+- **Branch 003 (RAG):** Implemented ChromaDB, Embeddings, PDF Uploads, and AI Memory.
+- **Branch 004 (Clean-up):** Fixed architectural bugs, added user Session Isolation, and implemented "Show Sources".
+- **Branch 005 (DB & Auth):** Migrated to MySQL, added JWT Authentication, separated UI (`web_ui`) from API, added file storage and history management.
+- **Branch 006 (RAG Quality):** Improving retrieval accuracy with Hybrid Search and Query Rewriting.
+
+---
 
 ### Branching Strategy & Git Workflow
 
 We follow a simple **GitHub Flow**: `main` is always stable, and each feature lives in a short-lived branch that is created from the **latest `main`**. A new branch is created only after the previous one has been merged.
 
 ```text
-main ──●──────────────●──────────────────●────────────────●────────────────●──────▶
-        \            / \                / \              / \              /
-         001-basic ─●   002-prompt ───●   003-rag ─────●   004-cleanup ─● (005-db-auth)
-        (PR + CI ✅)    (PR + CI ✅)      (PR + CI ✅)    (PR + CI ✅)    ✅ Done
-          tag: v0.1.0     tag: v0.2.0        tag: v0.3.0      tag: v0.4.0
+main ──●──────────────●──────────────────●────────────────●────────────────●────────────────●──────▶
+        \            / \                / \              / \              / \              /
+         001-basic ─●   002-prompt ───●   003-rag ─────●   004-cleanup ─●   005-db-auth ─● (006-rag-quality)
+        (PR + CI ✅)    (PR + CI ✅)      (PR + CI ✅)    (PR + CI ✅)    (PR + CI ✅)    🚧 In Progress
+          tag: v0.1.0     tag: v0.2.0        tag: v0.3.0      tag: v0.4.0      tag: v0.5.0
 ```
 
 **Why not stack branches (002 created from 001)?**
@@ -662,6 +673,20 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Updated `ChatSession` and `ChatMessage` models.
 - Replaced `X-Session-Id` with JWT Token authentication.
 - Fixed `SynchronousOnlyOperation` bug in async streaming.
+
+### Branch 006: `genai-chat-006-rag-quality` 🚧
+
+**Goal:** Improve RAG retrieval accuracy by implementing Hybrid Search (BM25 + Vector) and Query Rewriting.
+
+📄 **[Click here to read the detailed analysis for Branch 006 (README.006.md)](README.006.md)**
+
+**Scope**
+- Implement an Evaluation Script to measure current RAG accuracy.
+- Add BM25 Keyword search alongside Vector search.
+- Implement Query Rewriting for follow-up questions.
+- Test with multilingual embeddings (e.g., `bge-m3`).
+
+**Changes made:** _to be filled in as the branch progresses._
 ---
 
 ### Template for future branches
