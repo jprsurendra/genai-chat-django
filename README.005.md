@@ -1,4 +1,4 @@
-# Branch 005: `genai-chat-005-db-auth` 🚧
+# Branch 005: `genai-chat-005-db-auth` ✅ 
 
 **Goal:** 
 To transform the application from a prototype into a secure, multi-user platform. This branch introduces **MySQL** for persistent data storage, **JWT Authentication** for secure login/registration, and separates the **UI** from the **API** into distinct Django apps. It also adds chat history management (rename and delete) and permanent file storage for RAG.
