@@ -15,8 +15,8 @@ This document tracks what has been built so far and what is planned next. The pr
 | `003-rag` | Embeddings, ChromaDB, PDF upload | ✅ Done |
 | `004-clean-up` | Session isolation, show sources | ✅ Done |
 | `005-db-auth` | MySQL, JWT login, file storage | ✅ Done |
-| `006-rag-quality` | Hybrid search, query rewriting, reranking, evaluation | 🚧 In progress |
-| `007-agent-tools` | Function calling, bigger models | ⏳ Upcoming |
+| `006-rag-quality` | Hybrid search, query rewriting, evaluation (reranking carried over) | ✅ Done |
+| `007-agent-tools` | Function calling, bigger models | ⏭️ Next up |
 | `008-production` | Redis, Celery, Docker, observability | ⏳ Upcoming |
 | `009-voice-ui` | Voice, vision, Hindi UI | 💭 Future (optional) |
 
@@ -24,24 +24,34 @@ This document tracks what has been built so far and what is planned next. The pr
 
 ## Where we are now
 
-The app now has login, chat history in MySQL, document upload and RAG. The weak spot is **answer quality**: retrieval sometimes returns the wrong or duplicated chunks, and we have only checked it with a handful of questions. That is why Branch 006 comes before anything new and shiny.
+The app now has login, chat history in MySQL, document upload and an **improved RAG engine**:
 
-**First task in Branch 006:** build a proper evaluation set, so every later change can be measured instead of judged by feel.
+- **Hybrid search** (vector + BM25 keyword search) is implemented.
+- **Query rewriting** turns follow-up questions (such as *"उसका दाम क्या है?"*) into complete questions before searching.
+- `evaluate_rag.py` measures retrieval, but so far with only a handful of questions, so treat its score as a rough signal, not a guarantee.
+- **Reranking** is not done yet and is carried over (see Branch 006 below).
+
+**Next task:** Branch 007. Merge Branch 006 into `main`, then turn the chatbot into an agent by adding tool calling.
 
 ---
 
-## 🚧 Branch 006: `genai-chat-006-rag-quality` (in progress)
+## ✅ Branch 006: `genai-chat-006-rag-quality` (done)
 
 **Goal:** make retrieval accurate, so the AI answers from the right context and stops guessing.
 
-- **Hybrid search:** combine vector search with BM25 keyword search. Work on this has already started.
-- **Query rewriting:** when the user asks a follow-up such as *"उसका दाम क्या है?"* ("what is its price?"), the AI first rewrites it into a complete question using the earlier conversation, and only then searches.
-- **Reranking:** take the results of the search and re-rank them with a reranker model.
-- **Evaluation:** build a test set of 20 to 30 questions and measure a real score. So far we have only tried 5 questions.
+- **Hybrid search:** ✅ implemented (vector search combined with BM25 keyword search).
+- **Query rewriting:** ✅ implemented. A follow-up question is rewritten into a complete question using the earlier conversation, and only then searched.
+- **Evaluation:** ✅ `evaluate_rag.py` built (5 test cases so far).
+- **Reranking:** ⏳ not done. Carried over (see below).
+
+**Carried over from this branch**
+
+- Grow the evaluation set to 20 to 30 questions, including *negative* questions the document cannot answer (the app should return nothing relevant for them), and report Hit@1, Hit@3 and MRR instead of a single percentage.
+- Add reranking with a cross-encoder model, and keep it only if the evaluation score improves.
 
 ---
 
-## 🚀 Branch 007: `genai-chat-007-agent-tools` (upcoming)
+## 🚀 Branch 007: `genai-chat-007-agent-tools` (next)
 
 **Goal:** turn the chatbot into an agent that can do things, not only answer.
 
@@ -78,6 +88,42 @@ The app now has login, chat history in MySQL, document upload and RAG. The weak 
 
 ---
 
+## 🎓 Deep Learning Track (learning goals, in parallel)
+
+This project is meant to teach GenAI engineering, not only to ship features. These topics can be studied alongside the branches. Each one is tied to the branch where it is most useful.
+
+### 1. 🧠 Inside the LLM (core math and architecture)
+- **Transformers:** how self-attention works (*Attention Is All You Need*).
+- **Tokenization:** BPE (Byte-Pair Encoding), and how tokens affect arithmetic and rare words.
+- **Embeddings:** how text becomes numbers, and the different similarity metrics.
+- **Resource:** Andrej Karpathy's *Let's build GPT from scratch*.
+
+### 2. 🛠️ Fine-tuning and training
+- **PEFT / LoRA:** fine-tune a model on a small GPU without training from scratch.
+- **Hugging Face:** the `transformers` and `peft` libraries.
+- **Data preparation:** formatting JSONL datasets for training.
+
+### 3. 📚 Advanced RAG (builds on Branch 006)
+- **Reranking:** cross-encoders such as `bge-reranker` (the item carried over from Branch 006).
+- **Graph RAG:** storing data as a knowledge graph (nodes and edges).
+- **Multi-vector retrieval:** several vectors per document (question, answer, summary).
+
+### 4. 🤖 AI agents (Branch 007)
+- **ReAct pattern:** reasoning and acting, so the model thinks before each step.
+- **Multi-agent systems:** frameworks such as AutoGen, CrewAI or LangGraph.
+- **MCP (Model Context Protocol):** an open standard for connecting AI to tools.
+
+### 5. ⚡ Production and scaling (Branch 008)
+- **LLMOps:** observability with Langfuse or LangSmith.
+- **Evaluation:** RAGAS to measure RAG quality automatically.
+- **High-performance serving:** vLLM or TGI (Text Generation Inference).
+
+### 6. 🎨 Multimodal and vision (Branch 009)
+- **Vision models:** LLaVA or GPT-4o Vision for image understanding.
+- **Speech:** Whisper (speech to text) and text to speech.
+
+---
+
 ## 🗂️ Ideas not yet scheduled
 
 These came up in earlier branch notes and are not placed in a branch yet:
@@ -89,7 +135,7 @@ These came up in earlier branch notes and are not placed in a branch yet:
 
 ## 💡 Suggested next step
 
-Stay in Branch 006 and finish the **evaluation set** first. Without a trustworthy score we cannot tell whether hybrid search, query rewriting or reranking actually help. Once the RAG quality is measured and good enough, move on to Branch 007 and start giving the AI tools.
+Merge Branch 006 into `main`, then start Branch 007 with the simplest tool first: the **calculator**. After that add **web search**, and the **database query** last, because it needs the most care with permissions. Keep local Ollama as the default and make the larger model an option. In parallel, keep growing the evaluation set, so the RAG quality does not quietly get worse while the app gains new features.
 
 ---
 
@@ -100,12 +146,13 @@ Stay in Branch 006 and finish the **evaluation set** first. Without a trustworth
 
 अब तक हमारा project एक छोटे chatbot से बढ़कर एक पूरा GenAI application बन गया है, जिसमें login, database, RAG और file upload हैं। आगे की योजना यह है:
 
-**Branch 006: RAG Quality (अभी चल रही है)**
+**Branch 006: RAG Quality (पूरी हुई ✅)**
 लक्ष्य: retrieval को ज़्यादा सटीक बनाना, ताकि AI सही context से जवाब दे।
-- **Hybrid Search:** Vector Search के साथ BM25 (keyword search)।
-- **Query Rewriting:** follow-up सवाल (जैसे "उसका दाम क्या है?") को पहले पिछली बातचीत से पूरा सवाल बनाना, फिर search करना।
-- **Reranking:** search के results को Reranker model से दोबारा rank करना।
-- **Evaluation:** 20-30 सवालों का test set बनाकर असली score नापना (अभी सिर्फ़ 5 सवाल आज़माए हैं)।
+- **Hybrid Search:** ✅ Vector Search के साथ BM25 (keyword search)।
+- **Query Rewriting:** ✅ follow-up सवाल (जैसे "उसका दाम क्या है?") को पहले पिछली बातचीत से पूरा सवाल बनाना, फिर search करना।
+- **Evaluation:** ✅ `evaluate_rag.py` बना (अभी 5 सवाल)।
+- **Reranking:** ⏳ अभी नहीं हुआ, आगे के लिए बचा है।
+- **आगे के लिए बचा काम:** test set को 20-30 सवालों तक बढ़ाना (ऐसे सवाल भी जिनका जवाब document में नहीं है), और Hit@1, Hit@3, MRR नापना।
 
 **Branch 007: Agent Tools**
 लक्ष्य: chatbot को ऐसा Agent बनाना जो काम भी कर सके।
@@ -120,6 +167,8 @@ Stay in Branch 006 and finish the **evaluation set** first. Without a trustworth
 **Branch 009: Voice / UI (optional)**
 - Voice input/output, Image upload (Vision) और पूरा Hindi UI।
 
-**मेरी सलाह:** अभी Branch 006 में रहें और पहले Evaluation set ठीक से बनाएँ, ताकि पता चले कि हमारा RAG कितना सही है। फिर Branch 007 पर जाकर AI को tools देना सीखें।
+**🎓 Deep Learning Track (साथ-साथ सीखने के विषय):** LLM के अंदर (Transformers, Tokenization, Embeddings), Fine-tuning (LoRA/PEFT), Advanced RAG (Reranking, Graph RAG), AI Agents (ReAct, MCP), Production (Langfuse, RAGAS, vLLM) और Multimodal (Vision, Whisper)।
+
+**मेरी सलाह:** Branch 006 को main में merge कीजिए, फिर Branch 007 में सबसे आसान tool (Calculator) से शुरू कीजिए। उसके बाद Web Search, और सबसे आख़िर में Database query। साथ-साथ evaluation set बढ़ाते रहिए, ताकि नए features जुड़ने पर RAG की गुणवत्ता चुपचाप न गिरे।
 
 </details>
