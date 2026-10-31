@@ -1,15 +1,18 @@
 import os
 import re
 import django
+import asyncio
 
 # Setup Django environment
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
 from chat.utilities.rags.rag_engine import RAGEngine
+from chat.utilities.llms.llm import get_llm_service
+from chat.dtos import ChatMessage
 
 # ==========================================
-# 1. TEST DATASET
+# 1. TEST DATASET (20-30 Questions Recommended)
 # ==========================================
 TEST_CASES = [
     {
@@ -45,6 +48,12 @@ def first_hit_rank(docs, pattern):
     Returns the rank (1, 2, 3...) of the first document that matches the regex pattern.
     If no match is found, returns None.
     """
+    # 🔥 DEBUG PRINT (Kept for learning)
+    if docs:
+        print(f"   [DEBUG] Retrieved {len(docs)} docs. Top doc: {docs[0]['text'][:50]}...")
+    else:
+        print(f"   [DEBUG] Retrieved 0 docs.")
+
     for rank, d in enumerate(docs, 1):
         if re.search(pattern, d["text"], re.IGNORECASE):
             return rank
@@ -129,6 +138,50 @@ def evaluate_retrieval(user_id: str):
     print(f"Negative Test (Rejected irrelevant): {neg_ok}/{n_neg}\n")
 
 
+# ==========================================
+# 4. QUERY REWRITING TEST
+# ==========================================
+async def test_query_rewriting():
+    print(f"\n{'=' * 60}")
+    print(f"🧠 TESTING QUERY REWRITING")
+    print(f"{'=' * 60}\n")
+
+    llm = get_llm_service()
+
+    # Simulate a conversation history
+    history = [
+        ChatMessage(role="user", content="Who is the Prime Minister of the United Kingdom?"),
+        ChatMessage(role="assistant", content="The Prime Minister of the United Kingdom is Keir Starmer.")
+    ]
+
+    # Follow-up question with a pronoun
+    new_query = "How old is he?"
+
+    print(f"History:")
+    for msg in history:
+        print(f"  [{msg.role}]: {msg.content}")
+
+    print(f"\nNew Follow-up Question: '{new_query}'")
+
+    # Call the private method directly for testing
+    rewritten = await llm._rewrite_query(new_query, history)
+
+    print(f"Rewritten Query: '{rewritten}'")
+
+    if "Keir Starmer" in rewritten:
+        print("✅ PASS: The query was successfully rewritten to include the name.")
+    else:
+        print("❌ FAIL: The query did not include the name.")
+
+    print("-" * 60)
+
+
+# ==========================================
+# 5. MAIN EXECUTION
+# ==========================================
 if __name__ == "__main__":
     # Replace "1" with the ID of the user who uploaded the PDF
     evaluate_retrieval(user_id="1")
+
+    # Run the Query Rewriting test
+    asyncio.run(test_query_rewriting())

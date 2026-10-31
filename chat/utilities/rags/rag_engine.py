@@ -65,6 +65,16 @@ class RAGEngine:
     # CORE PRODUCTION METHODS
     # =====================================================================
 
+    def _tokenize(self, text: str) -> list[str]:
+        """
+        Improved tokenizer:
+        1. Converts to lowercase.
+        2. Extracts only words (ignores punctuation).
+        3. Ignores short words (<= 2 chars) like 'is', 'the', '2', '+'.
+        """
+        words = re.findall(r'\w+', text.lower())
+        return [w for w in words if len(w) > 2]
+
     def _query(self, collection, query: str, session_id: str, top_k: int) -> list[dict]:
         """
         Hybrid Search: Combines Vector Search (semantic) with BM25 (keyword).
@@ -84,17 +94,17 @@ class RAGEngine:
         if not all_docs:
             return []
 
-        # 2. Build BM25 Index
-        tokenized_corpus = [doc.lower().split() for doc in all_docs]
+        # 2. Build BM25 Index (Using the improved tokenizer)
+        tokenized_corpus = [self._tokenize(doc) for doc in all_docs]
         bm25 = BM25Okapi(tokenized_corpus)
-        tokenized_query = query.lower().split()
+        tokenized_query = self._tokenize(query)
 
         bm25_scores = bm25.get_scores(tokenized_query)
 
-        # 3. Get Vector Search Scores from ChromaDB
+        # 3. Get Vector Search Scores from ChromaDB (Fetch more candidates for better hybrid mix)
         vector_res = collection.query(
             query_texts=[query],
-            n_results=top_k,
+            n_results=max(top_k * 3, 10),
             where={"session_id": session_id},
             include=["documents", "distances", "metadatas"],
         )
@@ -121,8 +131,8 @@ class RAGEngine:
             # Convert distance to similarity (0 to 1)
             vector_score = 1.0 - vector_dist
 
-            # Hybrid Score (60% Vector, 40% BM25)
-            hybrid_score = (0.6 * vector_score) + (0.4 * normalized_bm25)
+            # Hybrid Score (50% Vector, 50% BM25)
+            hybrid_score = (0.5 * vector_score) + (0.5 * normalized_bm25)
 
             combined_results.append({
                 "text": doc,
@@ -136,17 +146,17 @@ class RAGEngine:
         combined_results.sort(key=lambda x: x["hybrid_score"], reverse=True)
 
         # 🔥 DEBUG: Print top 3 scores
-        print("\n[DEBUG] Top Hybrid Scores:")
-        for r in combined_results[:3]:
-            print(
-                f" - Score: {r['hybrid_score']:.4f} | Vector Dist: {r['vector_dist']:.4f} | Text: {r['text'][:30]}...")
+        # print("\n[DEBUG] Top Hybrid Scores:")
+        # for r in combined_results[:3]:
+        #     print(
+        #         f" - Score: {r['hybrid_score']:.4f} | Vector Dist: {r['vector_dist']:.4f} | Text: {r['text'][:30]}...")
 
         # 6. Filter and return top_k
         final_results = []
         for res in combined_results[:top_k]:
             # Strict Filter: If hybrid score is too low, reject it.
             if res["hybrid_score"] < 0.35:
-                print(f"   [DEBUG] Rejected with score {res['hybrid_score']:.4f}")
+                # print(f"   [DEBUG] Rejected with score {res['hybrid_score']:.4f}")
                 continue
 
             final_results.append({

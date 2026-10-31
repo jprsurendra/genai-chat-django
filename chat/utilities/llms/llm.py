@@ -33,6 +33,41 @@ class LLMService:
             return settings.OLLAMA_MODEL_FAST
         return self.default_model
 
+    async def _rewrite_query(self, user_message: str, history: list[ChatMessage]) -> str:
+        """
+        Uses the LLM to rewrite a follow-up question into a standalone question.
+        Example: "How old is he?" -> "How old is Keir Starmer?"
+        This helps the RAG engine find the correct documents even if the user uses pronouns.
+        """
+        if not history:
+            return user_message  # Nothing to rewrite if it's the first message
+
+        # Take the last 4 messages for context
+        context_text = "\n".join([f"{m.role}: {m.content}" for m in history[-4:]])
+
+        prompt = (
+            f"Given the following conversation:\n{context_text}\n\n"
+            f"Rewrite the user's new question to be a standalone question. "
+            f"If the new question is already standalone, return it as is. "
+            f"Do NOT answer the question, just rewrite it.\n"
+            f"New Question: {user_message}\n"
+            f"Standalone Question:"
+        )
+
+        try:
+            resp = await self.client.chat.completions.create(
+                model=self._resolve_model(use_fast=True),  # Use fast model for speed
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,  # 0.0 for deterministic output
+                max_tokens=100,
+            )
+            rewritten = resp.choices[0].message.content.strip()
+            logger.info(f"🔄 Query Rewritten: '{user_message}' -> '{rewritten}'")
+            return rewritten
+        except Exception as e:
+            logger.error(f"Query rewrite failed: {e}")
+            return user_message  # Fallback to original if it fails
+
     def _build_messages(self, user_message: str, history: list[ChatMessage], docs: list[dict], memories: list[dict]) -> \
             list[dict]:
         """
@@ -101,13 +136,16 @@ class LLMService:
         logger.info(f"▶️ [STREAM START] User: {user_message}, Session: {session_id}")
 
         try:
-            # 1. Fetch Context
-            docs = self.rag_engine.retrieve_documents(user_message, session_id, top_k=3)
-            memories = self.rag_engine.retrieve_memories(user_message, session_id, top_k=3)
+            # 🔥 NEW: Rewrite the query based on history to make it standalone
+            search_query = await self._rewrite_query(user_message, history)
 
-            logger.info(f"🔍 [RAG] Found {len(docs)} docs and {len(memories)} memories.")
+            # 1. Fetch Context (using the rewritten query)
+            docs = self.rag_engine.retrieve_documents(search_query, session_id, top_k=3)
+            memories = self.rag_engine.retrieve_memories(search_query, session_id, top_k=3)
 
-            # 2. Build Messages
+            logger.info(f"🔍 [RAG] Found {len(docs)} docs and {len(memories)} memories for query: '{search_query}'")
+
+            # 2. Build Messages (use the original user_message here so the LLM answers naturally)
             messages = self._build_messages(user_message, history, docs, memories)
             logger.info(f"📝 [PROMPT] Total messages: {len(messages)}")
 
@@ -118,7 +156,7 @@ class LLMService:
             # print(f"Final Messages sent to LLM: {messages}")
             # print("=========================\n")
 
-            # 3. Save User Message
+            # 3. Save User Message (save the original message, not the rewritten one)
             self.rag_engine.store_user_message(user_message, session_id)
 
             # 4. Call LLM
