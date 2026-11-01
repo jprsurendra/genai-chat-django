@@ -80,10 +80,12 @@ class ChatAPIView(APIView):
         # self.llm_service.test_manual_vector_store(req.message)
         # =====================================================================
 
-        # 1. Create or get session
+        # 1. Create or get session (SECURITY FIX: Ensure it belongs to the user)
         session_id = request.data.get("session_id")
         if session_id:
-            session, _ = ChatSession.objects.get_or_create(id=session_id, user=request.user)
+            session = ChatSession.objects.filter(id=session_id, user=request.user).first()
+            if not session:
+                return Response({"error": "Invalid session ID"}, status=status.HTTP_403_FORBIDDEN)
         else:
             title = req.message[:30] + "..." if len(req.message) > 30 else req.message
             session = ChatSession.objects.create(user=request.user, title=title)
@@ -139,10 +141,12 @@ class ChatStreamAPIView(ChatAPIView):
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create DB Session or get existing one
+        # Create DB Session or get existing one (SECURITY FIX)
         session_id = request.data.get("session_id")
         if session_id:
-            session, _ = ChatSession.objects.get_or_create(id=session_id, user=request.user)
+            session = ChatSession.objects.filter(id=session_id, user=request.user).first()
+            if not session:
+                return Response({"error": "Invalid session ID"}, status=status.HTTP_403_FORBIDDEN)
         else:
             title = req.message[:30] + "..." if len(req.message) > 30 else req.message
             session = ChatSession.objects.create(user=request.user, title=title)
@@ -229,14 +233,30 @@ class ChatHistoryAPIView(APIView):
         session_id = request.query_params.get("session_id")
 
         if session_id:
-            # Soft delete a specific session
-            ChatSession.objects.filter(id=session_id, user=request.user).update(is_deleted=True)
-            ChatMessage.objects.filter(session_id=session_id).update(is_deleted=True)
+            # 🔥 SECURITY FIX: Verify the session belongs to the current user
+            session = ChatSession.objects.filter(id=session_id, user=request.user).first()
+            if not session:
+                return Response({"error": "Session not found or unauthorized"}, status=status.HTTP_404_NOT_FOUND)
+
+            # 1. Soft delete the specific session
+            session.is_deleted = True
+            session.save()
+
+            # 2. Soft delete messages belonging to THAT session (Security Fix)
+            ChatMessage.objects.filter(session=session).update(is_deleted=True)
+
+            # Note: We do NOT call clear_session() here because it would delete ALL RAG data for the user.
+            # RAG data is tied to the user, not the specific chat session.
+
             return Response({"message": "Chat deleted successfully."})
         else:
             # Soft delete all chats for the user
             ChatSession.objects.filter(user=request.user).update(is_deleted=True)
             ChatMessage.objects.filter(session__user=request.user).update(is_deleted=True)
+
+            # If deleting ALL chats, it makes sense to also clear the RAG memory
+            self.llm_service.clear_session(str(request.user.id))
+
             return Response({"message": "All chats deleted."})
 
     def patch(self, request):
