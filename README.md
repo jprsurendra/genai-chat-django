@@ -462,9 +462,8 @@ Each branch builds on the previous one. This section records **what changed in e
 | [`genai-chat-004-clean-up`](README.004.md) | ✅ Done | Fixed architecture bugs, added Session ID isolation, and Show Sources (Citations) |
 | [`genai-chat-005-db-auth`](README.005.md) | ✅ Done | Migrated to MySQL, implemented JWT Auth, and separated UI from API |
 | [`genai-chat-006-rag-quality`](README.006.md) | ✅ Done | Hybrid Search, Query Rewriting, and Evaluation |
-| | [`genai-chat-007-security-hardening`](README.007.md) | ✅ Done | Secure media files, Prompt Injection defense, Redis rate limiting, and Logging |
+| [`genai-chat-007-security-hardening`](README.007.md) | ✅ Done | Secure media files, Prompt Injection defense, Redis rate limiting, and Logging |
 | [`genai-chat-008-agent-tools`](README.008.md) | 🚧 In Progress | Implementing Tool Calling (Calculator, Web Search) and bigger models |
-
 ---
 
 ### 📝 Quick Summaries
