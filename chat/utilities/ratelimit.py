@@ -1,31 +1,48 @@
-import threading
 import time
-from collections import defaultdict, deque
+import redis
+import logging
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 
-# Thread-safe storage for tracking requests per IP and scope
-_hits: dict[str, deque] = defaultdict(deque)
-_lock = threading.Lock()
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------
+# OLD IN-MEMORY LOGIC (Commented out for reference)
+# ---------------------------------------------------------
+# import threading
+# from collections import defaultdict, deque
+# _hits: dict[str, deque] = defaultdict(deque)
+# _lock = threading.Lock()
+# ---------------------------------------------------------
+
+# Initialize Redis Connection
+try:
+    redis_client = redis.Redis(
+        host=getattr(settings, "REDIS_HOST", "localhost"),
+        port=getattr(settings, "REDIS_PORT", 6379),
+        db=getattr(settings, "REDIS_DB", 0),
+        decode_responses=True,
+        socket_timeout=1.0  # Fail fast if Redis is down
+    )
+except Exception as e:
+    logger.error(f"Redis connection failed: {e}")
+    redis_client = None
 
 
 def check_rate_limit(ip: str, scope: str = "chat", limit: int = None) -> None:
     """
-    A thread-safe, in-memory sliding-window rate limiter.
+    A thread-safe, Redis-backed sliding-window rate limiter.
 
     Args:
-        ip (str): The client's IP address.
+        ip (str): The client's IP address (or user ID for logged-in users).
         scope (str): The context of the request (e.g., "chat", "upload").
-                     Different scopes have separate limits.
         limit (int, optional): The maximum number of requests allowed.
                                If not provided, it falls back to settings.CHAT_RATE_LIMIT.
 
     Raises:
         PermissionDenied: If the request limit is exceeded.
     """
-
     # 1. Determine the rate limit. If no specific limit is passed, read from settings.
-    # We use getattr() to provide a default value if the setting is missing.
     if limit is None:
         limit = getattr(settings, "CHAT_RATE_LIMIT", 20)
 
@@ -33,34 +50,51 @@ def check_rate_limit(ip: str, scope: str = "chat", limit: int = None) -> None:
     window = getattr(settings, "RATE_WINDOW_SECONDS", 60)
 
     now = time.time()
+    key = f"ratelimit:{scope}:{ip}"
 
-    # 3. Create a unique key for the user's IP and the current scope.
-    key = f"{scope}:{ip}"
+    # If Redis is unavailable, fallback to allowing the request (fail open)
+    if redis_client is None:
+        return
 
-    # 4. Acquire the lock to ensure thread safety
-    with _lock:
-        bucket = _hits[key]
+    try:
+        # Use a Redis Pipeline for atomic operations
+        pipe = redis_client.pipeline()
 
-        # 5. Remove timestamps that are older than the allowed time window.
-        while bucket and now - bucket[0] >= window:
-            bucket.popleft()
+        # 3. Remove old timestamps outside the window
+        pipe.zremrangebyscore(key, 0, now - window)
 
-        # 6. Check if the number of requests has reached the limit.
-        if len(bucket) >= limit:
+        # 4. Count current requests in the window
+        pipe.zcard(key)
+
+        # 5. Add the current timestamp
+        pipe.zadd(key, {str(now): now})
+
+        # 6. Set expiry on the key to prevent memory leaks
+        pipe.expire(key, window)
+
+        results = pipe.execute()
+
+        # The result at index 1 is the count BEFORE adding the current request
+        request_count = results[1]
+
+        # 7. Check if the number of requests has reached the limit.
+        if request_count >= limit:
             raise PermissionDenied(f"Rate limit exceeded: max {limit} req / {window}s.")
 
-        # 7. If allowed, add the current timestamp to the bucket.
-        bucket.append(now)
-
-        # 8. Memory Cleanup: If the dictionary gets too large, remove inactive IPs.
-        if len(_hits) > 1000:
-            for k in [k for k, v in _hits.items() if not v or now - v[-1] >= window]:
-                del _hits[k]
+    except redis.RedisError as e:
+        # If Redis fails during execution, log and allow (fail open)
+        logger.error(f"Redis rate limit error: {e}")
+        return
 
 
 def reset_rate_limits() -> None:
     """
     Helper function for unit tests to clear all rate limit data.
     """
-    with _lock:
-        _hits.clear()
+    if redis_client:
+        try:
+            # Delete all keys matching the ratelimit pattern
+            for key in redis_client.scan_iter("ratelimit:*"):
+                redis_client.delete(key)
+        except redis.RedisError:
+            pass
