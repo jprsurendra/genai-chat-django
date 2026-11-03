@@ -459,9 +459,11 @@ Each branch builds on the previous one. This section records **what changed in e
 | [`genai-chat-001-basic`](README.001.md) | ✅ Done | Basic streaming chatbot (Django + DRF + Ollama) |
 | [`genai-chat-002-system-prompt`](README.002.md) | ✅ Done | Improved system prompt and fixed identity confusion |
 | [`genai-chat-003-rag`](README.003.md) | ✅ Done | Implemented Embeddings, ChromaDB, PDF upload, and Chat Memory (RAG) |
+| [`genai-chat-004-clean-up`](README.004.md) | ✅ Done | Fixed architecture bugs, added Session ID isolation, and Show Sources (Citations) |
 | [`genai-chat-005-db-auth`](README.005.md) | ✅ Done | Migrated to MySQL, implemented JWT Auth, and separated UI from API |
-| [`genai-chat-006-rag-quality`](README.006.md) | 🚧 In Progress | Hybrid Search, Query Rewriting, and Evaluation |
----
+| [`genai-chat-006-rag-quality`](README.006.md) | ✅ Done | Hybrid Search, Query Rewriting, and Evaluation |
+| [`genai-chat-007-security-hardening`](README.007.md) | 🚧 In Progress | Fixing critical security vulnerabilities (Media, Prompt Injection, Rate Limits) |
+
 ---
 
 ### 📝 Quick Summaries
@@ -471,7 +473,8 @@ Each branch builds on the previous one. This section records **what changed in e
 - **Branch 003 (RAG):** Implemented ChromaDB, Embeddings, PDF Uploads, and AI Memory.
 - **Branch 004 (Clean-up):** Fixed architectural bugs, added user Session Isolation, and implemented "Show Sources".
 - **Branch 005 (DB & Auth):** Migrated to MySQL, added JWT Authentication, separated UI (`web_ui`) from API, added file storage and history management.
-- **Branch 006 (RAG Quality):** Improving retrieval accuracy with Hybrid Search and Query Rewriting.
+- **Branch 006 (RAG Quality):** Improved retrieval accuracy with Hybrid Search and Query Rewriting.
+- **Branch 007 (Security):** Hardening the system against Prompt Injection, securing media files, and fixing rate limiting.
 
 ---
 
@@ -480,12 +483,14 @@ Each branch builds on the previous one. This section records **what changed in e
 We follow a simple **GitHub Flow**: `main` is always stable, and each feature lives in a short-lived branch that is created from the **latest `main`**. A new branch is created only after the previous one has been merged.
 
 ```text
-main ──●──────────────●──────────────────●────────────────●────────────────●────────────────●──────▶
-        \            / \                / \              / \              / \              /
-         001-basic ─●   002-prompt ───●   003-rag ─────●   004-cleanup ─●   005-db-auth ─● (006-rag-quality)
-        (PR + CI ✅)    (PR + CI ✅)      (PR + CI ✅)    (PR + CI ✅)    (PR + CI ✅)    🚧 In Progress
-          tag: v0.1.0     tag: v0.2.0        tag: v0.3.0      tag: v0.4.0      tag: v0.5.0
+main ●──────●──────●──────●──────●──────●──────●────▶
+      \    / \    / \    / \    / \    / \    / \
+      001    002    003    004    005    006    007 🚧
+      v0.1.0 v0.2.0 v0.3.0 v0.4.0 v0.5.0 v0.6.0
 ```
+
+`001` basic · `002` system-prompt · `003` rag · `004` clean-up · `005` db-auth · `006` rag-quality · `007` security-hardening (in progress)
+Each merged branch gets a PR with passing CI and a version tag.
 
 **Why not stack branches (002 created from 001)?**
 Stacked branches carry the parent's commits, which causes duplicate commits and conflicts after a squash merge, and makes PR diffs noisy.
@@ -674,7 +679,7 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Replaced `X-Session-Id` with JWT Token authentication.
 - Fixed `SynchronousOnlyOperation` bug in async streaming.
 
-### Branch 006: `genai-chat-006-rag-quality` 🚧
+### Branch 006: `genai-chat-006-rag-quality` ✅
 
 **Goal:** Improve RAG retrieval accuracy by implementing Hybrid Search (BM25 + Vector) and Query Rewriting.
 
@@ -686,7 +691,28 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Implement Query Rewriting for follow-up questions.
 - Test with multilingual embeddings (e.g., `bge-m3`).
 
-**Changes made:** _to be filled in as the branch progresses._
+**Changes made:**
+- Created `evaluate_rag.py`.
+- Updated `RAGEngine` to use BM25 + Vector Hybrid Search.
+- Added `_rewrite_query` to `LLMService`.
+
+### Branch 007: `genai-chat-007-security-hardening` 🚧
+
+**Goal:** Fix critical security vulnerabilities identified in the Enterprise Architecture Review.
+
+📄 **[Click here to read the detailed analysis for Branch 007 (README.007.md)](README.007.md)**
+
+**Scope**
+- Secure media file downloads (prevent unauthorized access).
+- Prevent Prompt Injection (treat retrieved text as data only).
+- Upgrade Rate Limiting to Redis (per-user, not per-IP).
+- Implement complete data deletion (MySQL + Disk + ChromaDB).
+
+**Changes made so far:**
+- Secure file downloads: added `DownloadDocumentAPIView` (owner check via JWT) and removed the public `/media/` route.
+- Prompt hardening: retrieved text is wrapped in clear boundaries and treated as data only.
+- _Still to do:_ Redis rate limiting and complete data deletion.
+
 ---
 
 ### Template for future branches
