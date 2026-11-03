@@ -286,7 +286,7 @@ Two things to note:
 | 2 | `Calculator error ... ast.BitXor` for `2+2^5` | In Python `^` means bitwise XOR, not "power". The safe evaluator only allows whitelisted operators, so it refused it. Users and LLMs write `^` for powers. | Replace `^` with `**` before parsing, and add `ast.Pow` to the allowed operators. | ✅ Fix added, ⏳ not yet confirmed through a real tool call |
 | 3 | `Query rewrite failed: 'NoneType' object has no attribute 'strip'` | The free OpenRouter model sometimes returns empty content, and the code called `.strip()` on `None`. | Check that the content exists before calling `.strip()`; otherwise fall back to the original question. | ⏳ Fix prepared. The error still appears in the Test 2 log, so re-test after applying it. |
 | 4 | Raw `$2^5 = 32$` shown in the answer (Screenshot 1) | The model answers in LaTeX, and the chat window only renders Markdown. | Either tell the model not to use LaTeX in the system prompt, or add a math renderer such as KaTeX to the UI. | ⏳ Open. In Screenshot 2 the model happened to write plain text. |
-| 5 | Log says `Total generated: 0 chars` although an answer is shown | Most likely the counter only measures the first (tool-call) pass, not the answer streamed after the tool result. | Count the characters of both passes. | ⏳ To check |
+| 5 | Log says `Total generated: 0 chars` although an answer is shown | The counter only measures the text generated *before* the tool call, not the answer streamed after the tool result. This became clear while testing web search. | Count the characters of both passes. | ⏳ Cosmetic, to fix later |
 
 #### The fixes
 
@@ -346,7 +346,7 @@ return user_message
 
 - **Prove the `^` fix.** Ask something the model cannot easily do in its head, such as `1234 * 5678` (the answer is `7006652`) or `7^13`, and check that the log shows `Tool Calls Requested` and no `Calculator error`.
 - **Apply and re-test the `_rewrite_query` fix** (issue 3), then check that the error is gone from the log.
-- **Decide how to handle LaTeX** (issue 4) and **check the character counter** (issue 5).
+- **Decide how to handle LaTeX** (issue 4) and **fix the character counter** (issue 5, cosmetic only).
 - **Limit the exponent.** Now that `**` is allowed, an input like `9**9**9` can make the server hang. Cap the size of the numbers or exponents before evaluating. This matters after the security work in Branch 007.
 
 #### Lesson from this debugging
@@ -381,7 +381,7 @@ LLM गणित में कमज़ोर होते हैं, क्य�
 | 2 | `^` पर `ast.BitXor` error | Python में `^` XOR है, power नहीं | parse करने से पहले `^` को `**` से बदलें और `ast.Pow` allow करें | ✅ fix जोड़ा, ⏳ असली tool call से पुष्टि बाकी |
 | 3 | `Query rewrite failed: 'NoneType'... 'strip'` | Free model कभी-कभी खाली जवाब देता है | `.strip()` से पहले जाँचें कि content है, वरना original सवाल इस्तेमाल करें | ⏳ fix तैयार, दोबारा test करना है |
 | 4 | जवाब में raw `$...$` LaTeX | Model LaTeX में लिखता है, UI उसे render नहीं करती | System prompt में LaTeX मना करें, या UI में KaTeX जोड़ें | ⏳ खुला |
-| 5 | Log में `Total generated: 0 chars` | शायद counter सिर्फ़ पहले (tool-call) pass को गिनता है | दोनों passes गिनें | ⏳ जाँचना है |
+| 5 | Log में `Total generated: 0 chars` | Counter सिर्फ़ tool call से *पहले* generate हुए text को गिनता है, tool के नतीजे के बाद वाले जवाब को नहीं (web search test में यह साफ़ हुआ) | दोनों passes गिनें | ⏳ सिर्फ़ दिखावटी (cosmetic), बाद में ठीक करना है |
 
 **अभी क्या बाकी है**
 
@@ -393,9 +393,64 @@ LLM गणित में कमज़ोर होते हैं, क्य�
 
 </details>
 
-### 2. Web Search Tool (Optional/Future)
-- **Problem:** The AI's knowledge is limited to its training data (cutoff date).
-- **Solution:** A tool that queries a search engine (like Tavily or DuckDuckGo) and returns real-time results. It needs a free search API, so it comes after the calculator.
+### 2. Web Search Tool ✅
+
+- **Problem:** the AI's knowledge stops at its training cutoff. It cannot answer questions about current events or live data (news, weather).
+- **Solution:** we connected the **Tavily** search API as a `web_search` tool. The model decides when it needs fresh information, Django calls Tavily with the query the model wrote, and the results go back to the model, which writes a summarised answer.
+- **Status:** implemented and tested with two questions: the latest SpaceX news and the current weather in Mumbai.
+
+[![Web search in action](docs/screenshot_008_03.png)](docs/screenshot_008_03.png)
+
+*Screenshot 3: the AI searches the web for the latest SpaceX news and for the current weather in Mumbai: [`docs/screenshot_008_03.png`](docs/screenshot_008_03.png)*
+
+**What happened**
+
+- **SpaceX news:** the model recognised that the answer is not in its training data, called `web_search`, and answered from the fresh Tavily results.
+- **Mumbai weather:** it searched again and reported the temperature, humidity and wind speed from the results.
+
+**Terminal log (SpaceX question)**
+
+```text
+[INFO] chat.utilities.llms.llm: 🛠️ Tool Calls Requested: [{'function': {'name': 'web_search', 'arguments': '{"query":"latest news about SpaceX"}'}}]
+[INFO] chat.utilities.llms.llm: 🌐 Searching Web: latest news about SpaceX
+[INFO] chat.utilities.llms.llm: 🔄 Calling LLM again with tool results...
+```
+
+This time the log is real evidence: the tool was requested, the search ran, and the results were sent back to the model. (Unlike the `2+2^5` case in Test 2 above, where the model skipped the tool.)
+
+**A note on the `0 chars` line.** The log still ends with `Total generated: 0 chars` although the full answer appears on screen. That is the counter from issue 5: it only counts the text produced before the tool call. It is cosmetic, not an error.
+
+**Things to keep in mind**
+
+- **Privacy:** the user's search query is sent to Tavily, a third party, in addition to the LLM provider. This adds to the cloud trade-offs listed earlier.
+- **Search results are untrusted text.** A web page can contain instructions aimed at the model. The same rule as in Branch 007 applies: treat tool results as data, never as instructions.
+- **Keys and quota:** the Tavily API key is a secret and belongs in `.env`, not in Git. Free tiers have limits, so check the quota.
+
+<details>
+<summary><b>🇮🇳 हिंदी में समझें (Click to expand Hindi Explanation) - Web Search Tool</b></summary>
+
+<br>
+
+**समस्या:** AI का ज्ञान उसकी training के cutoff तक सीमित है। ताज़ा खबर या मौसम जैसे सवालों का जवाब वह नहीं जानता।
+
+**समाधान:** हमने **Tavily** search API को `web_search` tool के रूप में जोड़ा। Model खुद तय करता है कि उसे ताज़ा जानकारी चाहिए, तब Django उसके लिखे query से Tavily को call करता है, और नतीजे वापस model को जाते हैं, जो उनका सारांश बनाकर जवाब देता है।
+
+**Test (Screenshot 3):**
+
+- **SpaceX की खबर:** Model ने समझा कि इसका जवाब उसके training data में नहीं है, `web_search` call किया और ताज़ा नतीजों से जवाब दिया।
+- **मुंबई का मौसम:** उसने दोबारा search किया और तापमान, नमी और हवा की गति बताई।
+
+**Log:** `Tool Calls Requested` → `Searching Web` → `Calling LLM again with tool results`। यानी इस बार tool सचमुच चला, यह log से साबित है। (`2+2^5` वाले Test 2 में model ने tool छोड़ दिया था।)
+
+**`0 chars` वाली line:** जवाब पूरा दिखने पर भी log में `Total generated: 0 chars` आता है। इसका कारण issue 5 है: counter सिर्फ़ tool call से पहले के text को गिनता है। यह error नहीं, सिर्फ़ दिखावटी (cosmetic) बात है।
+
+**ध्यान रखें:**
+
+- **Privacy:** user का search query LLM provider के अलावा Tavily (तीसरे पक्ष) को भी जाता है।
+- **Search के नतीजे भरोसेमंद नहीं होते:** किसी web page में model के लिए छिपे निर्देश हो सकते हैं। Branch 007 वाला नियम यहाँ भी लागू है: tool के नतीजे को सिर्फ़ "data" मानें, "निर्देश" नहीं।
+- **Key और quota:** Tavily की API key एक secret है, उसे `.env` में रखें और Git में कभी न डालें। Free tier की limits होती हैं, इसलिए quota देख लें।
+
+</details>
 
 ### 3. Database Query Tool (Planned, last)
 - **Use case:** questions such as "how many chats do I have?" or "how many files did I upload?".
@@ -405,7 +460,8 @@ LLM गणित में कमज़ोर होते हैं, क्य�
 1. ✅ Build the calculator in `tools.py`.
 2. ✅ Add the function-calling logic in `LLMService`.
 3. ✅ Connect OpenRouter so a capable model is available.
-4. Add web search and the database query tool last.
+4. ✅ Add web search.
+5. Add the database query tool last (still to do).
 
 ---
 
@@ -427,7 +483,8 @@ LLM गणित में कमज़ोर होते हैं, क्य�
 3. **OpenAI SDK is the industry standard:** Because Ollama, OpenRouter, and Groq all support the OpenAI format, we can switch providers by changing just a few lines in `.env`.
 4. **Cloud has a price even when it is free:** privacy, rate limits and internet dependence. Know what you give up.
 5. **Do not trust the model alone:** a simple Python fallback for the calculator makes the app work even when a small model fails to call the tool.
-6. **Tool Calling is the future:** A chatbot that just talks is limited. An agent that can calculate, search, and query databases is exponentially more useful.
+6. **Tool results are untrusted input:** web pages and documents can contain instructions. Treat everything a tool returns as data.
+7. **Tool Calling is the future:** A chatbot that just talks is limited. An agent that can calculate, search, and query databases is exponentially more useful.
 
 ---
 
