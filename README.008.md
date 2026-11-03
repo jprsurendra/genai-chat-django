@@ -401,12 +401,14 @@ LLM गणित में कमज़ोर होते हैं, क्य�
 
 [![Web search in action](docs/screenshot_008_03.png)](docs/screenshot_008_03.png)
 
-*Screenshot 3: the AI searches the web for the latest SpaceX news and for the current weather in Mumbai: [`docs/screenshot_008_03.png`](docs/screenshot_008_03.png)*
+*Screenshot 3: `What is the latest news about SpaceX?` and `What is the weather in Mumbai right now?`, both answered from live search results: [`docs/screenshot_008_03.png`](docs/screenshot_008_03.png)*
 
-**What happened**
+**What the screenshot shows**
 
-- **SpaceX news:** the model recognised that the answer is not in its training data, called `web_search`, and answered from the fresh Tavily results.
-- **Mumbai weather:** it searched again and reported the temperature, humidity and wind speed from the results.
+- **SpaceX news (05:20 PM):** the model recognised that the answer is not in its training data, called `web_search` and summarised the results into five items: a new Starship integration facility in Florida, a static-fire test of a Super Heavy booster before the next Starship flight test, a Starlink launch of 27 satellites on a Falcon 9, a Bloomberg report about a possible wireless network, and Tesla merger talk. The last item is correctly labelled as speculation.
+- **Mumbai weather (05:21 PM):** a second search returned the temperature (about 29.9°C, feels like 34.3°C), the sky condition (smoky haze, cloudy), humidity (68%), wind (about 16 km/h from the north-west) and a 5% chance of rain. The answer includes the data timestamp (*last updated 17:15 local time*) and advises checking a local weather service for real-time updates.
+
+Two good signs: the model passes on how fresh the data is, and it keeps uncertain claims marked as uncertain.
 
 **Terminal log (SpaceX question)**
 
@@ -424,6 +426,7 @@ This time the log is real evidence: the tool was requested, the search ran, and 
 
 - **Privacy:** the user's search query is sent to Tavily, a third party, in addition to the LLM provider. This adds to the cloud trade-offs listed earlier.
 - **Search results are untrusted text.** A web page can contain instructions aimed at the model. The same rule as in Branch 007 applies: treat tool results as data, never as instructions.
+- **No source links yet.** The answers do not show where the information came from. For news and weather this is a gap: the user cannot check the claims. Branch 004 added "Show Sources" for documents; the same idea could show the Tavily result links.
 - **Keys and quota:** the Tavily API key is a secret and belongs in `.env`, not in Git. Free tiers have limits, so check the quota.
 
 <details>
@@ -437,8 +440,10 @@ This time the log is real evidence: the tool was requested, the search ran, and 
 
 **Test (Screenshot 3):**
 
-- **SpaceX की खबर:** Model ने समझा कि इसका जवाब उसके training data में नहीं है, `web_search` call किया और ताज़ा नतीजों से जवाब दिया।
-- **मुंबई का मौसम:** उसने दोबारा search किया और तापमान, नमी और हवा की गति बताई।
+- **SpaceX की खबर (05:20 PM):** Model ने समझा कि इसका जवाब उसके training data में नहीं है, `web_search` call किया और नतीजों को पाँच बिंदुओं में समेटा: Florida में नई Starship integration facility, Super Heavy booster का static-fire test, Falcon 9 से 27 Starlink satellites का launch, wireless network पर Bloomberg की रिपोर्ट, और Tesla merger की चर्चा, जिसे model ने सही तरह से अटकल (speculation) बताया।
+- **मुंबई का मौसम (05:21 PM):** दूसरे search से तापमान (लगभग 29.9°C, महसूस 34.3°C), आसमान (smoky haze, बादल), नमी 68%, हवा लगभग 16 km/h (NW से) और बारिश की 5% संभावना मिली। जवाब में data का समय (*last updated 17:15 local time*) भी बताया गया और local weather service देखने की सलाह दी गई।
+
+दो अच्छे संकेत: model बताता है कि data कितना ताज़ा है, और अनिश्चित बातों को अनिश्चित ही कहता है।
 
 **Log:** `Tool Calls Requested` → `Searching Web` → `Calling LLM again with tool results`। यानी इस बार tool सचमुच चला, यह log से साबित है। (`2+2^5` वाले Test 2 में model ने tool छोड़ दिया था।)
 
@@ -448,6 +453,7 @@ This time the log is real evidence: the tool was requested, the search ran, and 
 
 - **Privacy:** user का search query LLM provider के अलावा Tavily (तीसरे पक्ष) को भी जाता है।
 - **Search के नतीजे भरोसेमंद नहीं होते:** किसी web page में model के लिए छिपे निर्देश हो सकते हैं। Branch 007 वाला नियम यहाँ भी लागू है: tool के नतीजे को सिर्फ़ "data" मानें, "निर्देश" नहीं।
+- **Source links नहीं दिखते:** जवाब में यह नहीं दिखता कि जानकारी कहाँ से आई, इसलिए user दावे जाँच नहीं सकता। Branch 004 का "Show Sources" यहाँ भी काम आ सकता है।
 - **Key और quota:** Tavily की API key एक secret है, उसे `.env` में रखें और Git में कभी न डालें। Free tier की limits होती हैं, इसलिए quota देख लें।
 
 </details>
