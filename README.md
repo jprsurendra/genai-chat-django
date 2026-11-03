@@ -462,7 +462,8 @@ Each branch builds on the previous one. This section records **what changed in e
 | [`genai-chat-004-clean-up`](README.004.md) | ✅ Done | Fixed architecture bugs, added Session ID isolation, and Show Sources (Citations) |
 | [`genai-chat-005-db-auth`](README.005.md) | ✅ Done | Migrated to MySQL, implemented JWT Auth, and separated UI from API |
 | [`genai-chat-006-rag-quality`](README.006.md) | ✅ Done | Hybrid Search, Query Rewriting, and Evaluation |
-| [`genai-chat-007-security-hardening`](README.007.md) | 🚧 In Progress | Fixing critical security vulnerabilities (Media, Prompt Injection, Rate Limits) |
+| | [`genai-chat-007-security-hardening`](README.007.md) | ✅ Done | Secure media files, Prompt Injection defense, Redis rate limiting, and Logging |
+| [`genai-chat-008-agent-tools`](README.008.md) | 🚧 In Progress | Implementing Tool Calling (Calculator, Web Search) and bigger models |
 
 ---
 
@@ -474,8 +475,8 @@ Each branch builds on the previous one. This section records **what changed in e
 - **Branch 004 (Clean-up):** Fixed architectural bugs, added user Session Isolation, and implemented "Show Sources".
 - **Branch 005 (DB & Auth):** Migrated to MySQL, added JWT Authentication, separated UI (`web_ui`) from API, added file storage and history management.
 - **Branch 006 (RAG Quality):** Improved retrieval accuracy with Hybrid Search and Query Rewriting.
-- **Branch 007 (Security):** Hardening the system against Prompt Injection, securing media files, and fixing rate limiting.
-
+- **Branch 007 (Security):** Hardened the system against Prompt Injection, secured media files, added Redis rate limiting, and implemented file-based logging.
+- **Branch 008 (Agent Tools):** Turning the chatbot into an Agent by adding Calculator and Web Search tools.
 ---
 
 ### Branching Strategy & Git Workflow
@@ -483,10 +484,17 @@ Each branch builds on the previous one. This section records **what changed in e
 We follow a simple **GitHub Flow**: `main` is always stable, and each feature lives in a short-lived branch that is created from the **latest `main`**. A new branch is created only after the previous one has been merged.
 
 ```text
-main ●──────●──────●──────●──────●──────●──────●────▶
-      \    / \    / \    / \    / \    / \    / \
-      001    002    003    004    005    006    007 🚧
-      v0.1.0 v0.2.0 v0.3.0 v0.4.0 v0.5.0 v0.6.0
+### Branching Strategy & Git Workflow
+
+We follow a simple **GitHub Flow**: `main` is always stable, and each feature lives in a short-lived branch that is created from the **latest `main`**. A new branch is created only after the previous one has been merged.
+
+```text
+main ──●──────────────●──────────────────●────────────────●────────────────●────────────────●────────────────●────────────────●──────▶
+        \            / \                / \              / \              / \              / \              / \              /
+         001-basic ─●   002-prompt ───●   003-rag ─────●   004-cleanup ─●   005-db-auth ─●   006-rag-quality ─●   007-security ─● (008-agent-tools)
+        (PR + CI ✅)    (PR + CI ✅)      (PR + CI ✅)    (PR + CI ✅)    (PR + CI ✅)    (PR + CI ✅)    (PR + CI ✅)    🚧 In Progress
+          tag: v0.1.0     tag: v0.2.0        tag: v0.3.0      tag: v0.4.0      tag: v0.5.0      tag: v0.6.0      tag: v0.7.0
+          
 ```
 
 `001` basic · `002` system-prompt · `003` rag · `004` clean-up · `005` db-auth · `006` rag-quality · `007` security-hardening (in progress)
