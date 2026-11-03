@@ -224,9 +224,173 @@ OLLAMA_MODEL_FAST=qwen2.5:1.5b
 
 ## 🛠️ Tools in this Branch
 
-### 1. Calculator Tool
-- **Problem:** LLMs are bad at math (as seen with `2+2`). They predict text, they don't calculate.
-- **Solution:** A Python function `calculate(expression)` that uses safe `eval()` to compute exact math. The AI will call this tool when asked a math question.
+### 1. Calculator Tool ✅
+
+- **Problem:** LLMs are bad at math (as seen with `2+2` in Branch 001). They predict text, they don't calculate.
+- **Solution:** a Python function `calculate(expression)` in `chat/utilities/tools.py` that parses the expression with Python's `ast` module (no `eval()`) and computes exact math. The model asks for it through a tool call, Django runs it, and the result goes back to the model.
+- **Status:** implemented and working for plain arithmetic. One part is still to be verified (see "What is still open" below).
+
+The two test runs below show what went wrong along the way and how each problem was found. For each one I kept the screenshot and the matching server log side by side, because the screenshot alone was misleading.
+
+#### Test 1: the right answer, but the tool had failed
+
+[![Test 1: PDF upload, RAG answer and 2+2^5](docs/screenshot_008_01.png)](docs/screenshot_008_01.png)
+
+*Screenshot 1: PDF upload and RAG answer (`K`), then `2+2^5` answered with `34` and a step-by-step explanation: [`docs/screenshot_008_01.png`](docs/screenshot_008_01.png)*
+
+**What the screenshot shows.** Everything looks fine. The PDF was indexed, the RAG question about sodium and potassium returned `K`, and `2+2^5` returned `34` with the steps. Only one detail is off: the steps contain raw `$2^5 = 32$`, which is LaTeX that the chat window does not render.
+
+**What the log shows.**
+
+```text
+[ERROR] chat.utilities.llms.llm: Query rewrite failed: 'NoneType' object has no attribute 'strip'
+[INFO]  chat.utilities.llms.llm: 🔍 [RAG] Found 0 docs and 0 memories for query: '2+2^5'
+[INFO]  chat.utilities.llms.llm: 🛠️ Tool Calls Requested: [{'function': {'name': 'calculate', 'arguments': '{"expression":"2+2^5"}'}}]
+[INFO]  chat.utilities.llms.llm: 🧮 Calculating: 2+2^5
+[ERROR] chat.utilities.tools: Calculator error for '2+2^5': <class 'ast.BitXor'>
+[INFO]  chat.utilities.llms.llm: 🔄 Calling LLM again with tool results...
+[INFO]  chat.utilities.llms.llm: 🏁 [STREAM END] Total generated: 0 chars.
+```
+
+The model did call the tool, but the calculator **rejected the expression** (`ast.BitXor`) and returned an error. The model then recovered on its own and computed `34` itself. So the answer was right, but it did not come from our calculator. Without reading the log, I would have believed the tool worked.
+
+#### Test 2: after the fix
+
+[![Test 2: 2+2, RAG answer and 2+2^5](docs/screenshot_008_02.png)](docs/screenshot_008_02.png)
+
+*Screenshot 2: `Hi, I am SSR, 2+2?`, then the PDF upload, the RAG answer and `2+2^5`: [`docs/screenshot_008_02.png`](docs/screenshot_008_02.png)*
+
+```text
+[INFO]  ▶️ [STREAM START] User: Hi, I am SSR, 2+2?, Session: 1
+[INFO]  🛠️ Tool Calls Requested: [{'function': {'name': 'calculate', 'arguments': '{"expression":"2+2"}'}}]
+[INFO]  🧮 Calculating: 2+2
+...
+[INFO]  ▶️ [STREAM START] User: 2+2^5, Session: 1
+[ERROR] Query rewrite failed: 'NoneType' object has no attribute 'strip'
+[INFO]  🔍 [RAG] Found 0 docs and 2 memories for query: '2+2^5'
+[INFO]  ⏳ Calling LLM API...
+[INFO]  🏁 [STREAM END] Total generated: 47 chars.
+```
+
+Two things to note:
+
+- **`Hi, I am SSR, 2+2?` now works, and it went through the tool.** This is the very sentence that confused the small models in [Branch 002](README.002.md) ("SSR is a Russian military unit..."). A 70B model plus a calculator tool handles it without trouble.
+- **`2+2^5` was answered *without* calling the tool.** There is no `Tool Calls Requested` line for it, so the model answered from its own knowledge (correctly). That means this run does **not** prove that the `^` fix works. See the next steps below.
+
+#### Issues and solutions
+
+| # | Issue | Cause | Solution | Status |
+|---|-------|-------|----------|--------|
+| 1 | `module 'ast' has no attribute 'Num'` | The code used `ast.Num`. It has been deprecated since Python 3.8 and was removed in Python 3.14, which this project runs. | Use `ast.Constant` instead. | ✅ Fixed |
+| 2 | `Calculator error ... ast.BitXor` for `2+2^5` | In Python `^` means bitwise XOR, not "power". The safe evaluator only allows whitelisted operators, so it refused it. Users and LLMs write `^` for powers. | Replace `^` with `**` before parsing, and add `ast.Pow` to the allowed operators. | ✅ Fix added, ⏳ not yet confirmed through a real tool call |
+| 3 | `Query rewrite failed: 'NoneType' object has no attribute 'strip'` | The free OpenRouter model sometimes returns empty content, and the code called `.strip()` on `None`. | Check that the content exists before calling `.strip()`; otherwise fall back to the original question. | ⏳ Fix prepared. The error still appears in the Test 2 log, so re-test after applying it. |
+| 4 | Raw `$2^5 = 32$` shown in the answer (Screenshot 1) | The model answers in LaTeX, and the chat window only renders Markdown. | Either tell the model not to use LaTeX in the system prompt, or add a math renderer such as KaTeX to the UI. | ⏳ Open. In Screenshot 2 the model happened to write plain text. |
+| 5 | Log says `Total generated: 0 chars` although an answer is shown | Most likely the counter only measures the first (tool-call) pass, not the answer streamed after the tool result. | Count the characters of both passes. | ⏳ To check |
+
+#### The fixes
+
+`chat/utilities/tools.py`:
+
+```python
+import ast
+import logging
+import operator
+
+logger = logging.getLogger(__name__)
+
+# Only these operators are allowed
+OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Pow: operator.pow,   # handles ** (power)
+    ast.USub: operator.neg,
+}
+
+def calculate(expression: str) -> str:
+    """Safely evaluate a mathematical expression."""
+    try:
+        # '^' is XOR in Python, but people mean "power"
+        expression = expression.replace("^", "**")
+        node = ast.parse(expression, mode="eval").body
+
+        def _eval(node):
+            if isinstance(node, ast.Constant):      # ast.Num no longer exists
+                return node.value
+            elif isinstance(node, ast.BinOp):
+                return OPERATORS[type(node.op)](_eval(node.left), _eval(node.right))
+            elif isinstance(node, ast.UnaryOp):
+                return OPERATORS[type(node.op)](_eval(node.operand))
+            raise TypeError(f"Unsupported operation: {type(node)}")
+
+        return str(_eval(node))
+    except Exception as e:
+        logger.error(f"Calculator error for '{expression}': {e}")
+        return f"Error: Could not calculate '{expression}'"
+```
+
+`chat/utilities/llms/llm.py`, inside `_rewrite_query`:
+
+```python
+content = resp.choices[0].message.content
+if content:
+    rewritten = content.strip()
+    logger.info(f"🔄 Query Rewritten: '{user_message}' -> '{rewritten}'")
+    return rewritten
+return user_message
+```
+
+#### What is still open
+
+- **Prove the `^` fix.** Ask something the model cannot easily do in its head, such as `1234 * 5678` (the answer is `7006652`) or `7^13`, and check that the log shows `Tool Calls Requested` and no `Calculator error`.
+- **Apply and re-test the `_rewrite_query` fix** (issue 3), then check that the error is gone from the log.
+- **Decide how to handle LaTeX** (issue 4) and **check the character counter** (issue 5).
+- **Limit the exponent.** Now that `**` is allowed, an input like `9**9**9` can make the server hang. Cap the size of the numbers or exponents before evaluating. This matters after the security work in Branch 007.
+
+#### Lesson from this debugging
+
+A correct answer on screen does not prove the tool worked. The only reliable evidence was the server log, so every tool call should be logged with its result, not just its request.
+
+<details>
+<summary><b>🇮🇳 हिंदी में समझें (Click to expand Hindi Explanation) - Calculator Tool: समस्या और समाधान</b></summary>
+
+<br>
+
+**Calculator Tool क्या करता है?**
+
+LLM गणित में कमज़ोर होते हैं, क्योंकि वे अगला शब्द अनुमान लगाते हैं, गणना नहीं करते। इसलिए हमने `chat/utilities/tools.py` में `calculate(expression)` बनाया, जो `ast` से expression को सुरक्षित तरीके से parse करके सही नतीजा निकालता है (`eval()` नहीं)। Model tool call माँगता है, Django उसे चलाता है, और नतीजा वापस model को जाता है।
+
+**Test 1 (Screenshot 1): जवाब सही, पर tool फ़ेल**
+
+- Screenshot में सब ठीक दिखा: PDF index हुई, RAG ने `K` ढूँढा, और `2+2^5` का जवाब `34` आया।
+- लेकिन server log में दिखा कि model ने `calculate` tool माँगा, और Calculator ने `2+2^5` को **reject** कर दिया (`ast.BitXor`), क्योंकि Python में `^` का मतलब XOR होता है, power नहीं। इसके बाद model ने खुद ही `34` निकाल लिया। यानी जवाब सही था, पर हमारे calculator से नहीं आया।
+- Screenshot में `$2^5 = 32$` जैसा raw LaTeX भी दिखा, क्योंकि chat window सिर्फ़ Markdown दिखाती है, math नहीं।
+
+**Test 2 (Screenshot 2): fix के बाद**
+
+- `Hi, I am SSR, 2+2?` का जवाब सही आया और इस बार tool से आया। यही वह वाक्य है जिसने Branch 002 में छोटे models को उलझा दिया था।
+- पर `2+2^5` के लिए log में tool call की कोई line नहीं है। Model ने खुद जवाब दे दिया (सही), इसलिए इस run से यह साबित नहीं होता कि `^` वाला fix काम करता है।
+
+**समस्याएँ और समाधान**
+
+| # | समस्या | कारण | समाधान | स्थिति |
+|---|--------|------|--------|--------|
+| 1 | `ast.Num` का error | `ast.Num` Python 3.8 से deprecated था और 3.14 में हटा दिया गया, जो इस project में है | `ast.Constant` इस्तेमाल करें | ✅ ठीक |
+| 2 | `^` पर `ast.BitXor` error | Python में `^` XOR है, power नहीं | parse करने से पहले `^` को `**` से बदलें और `ast.Pow` allow करें | ✅ fix जोड़ा, ⏳ असली tool call से पुष्टि बाकी |
+| 3 | `Query rewrite failed: 'NoneType'... 'strip'` | Free model कभी-कभी खाली जवाब देता है | `.strip()` से पहले जाँचें कि content है, वरना original सवाल इस्तेमाल करें | ⏳ fix तैयार, दोबारा test करना है |
+| 4 | जवाब में raw `$...$` LaTeX | Model LaTeX में लिखता है, UI उसे render नहीं करती | System prompt में LaTeX मना करें, या UI में KaTeX जोड़ें | ⏳ खुला |
+| 5 | Log में `Total generated: 0 chars` | शायद counter सिर्फ़ पहले (tool-call) pass को गिनता है | दोनों passes गिनें | ⏳ जाँचना है |
+
+**अभी क्या बाकी है**
+
+- `1234 * 5678` (जवाब `7006652`) या `7^13` पूछकर देखें कि log में `Tool Calls Requested` आए और `Calculator error` न आए।
+- `_rewrite_query` का fix लगाकर दोबारा test करें।
+- `**` अब allowed है, इसलिए `9**9**9` जैसा input server को अटका सकता है। Exponent की सीमा तय करें (Branch 007 की सुरक्षा के लिहाज़ से ज़रूरी)।
+
+**सबक:** स्क्रीन पर सही जवाब का मतलब यह नहीं कि tool चला। असली सबूत server log में था, इसलिए हर tool call का नतीजा भी log होना चाहिए।
+
+</details>
 
 ### 2. Web Search Tool (Optional/Future)
 - **Problem:** The AI's knowledge is limited to its training data (cutoff date).
@@ -237,9 +401,9 @@ OLLAMA_MODEL_FAST=qwen2.5:1.5b
 - **Approach:** a read-only query, scoped to the logged-in user. This is the riskiest tool for data leaks, which is why Branch 007 (security hardening) comes first.
 
 ### Order of work
-1. Build the calculator in `tools.py`.
-2. Add the function-calling logic in `LLMService`.
-3. Connect OpenRouter (or Groq) so a capable model is available.
+1. ✅ Build the calculator in `tools.py`.
+2. ✅ Add the function-calling logic in `LLMService`.
+3. ✅ Connect OpenRouter so a capable model is available.
 4. Add web search and the database query tool last.
 
 ---

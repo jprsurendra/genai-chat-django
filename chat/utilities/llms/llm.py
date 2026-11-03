@@ -2,7 +2,9 @@ from openai import AsyncOpenAI
 from django.conf import settings
 from chat.dtos import ChatMessage
 from chat.utilities.rags.rag_engine import RAGEngine
+from chat.utilities.tools import calculate  # 🔥 NEW: Import the Calculator tool
 import logging
+import json  # 🔥 NEW: For parsing tool arguments
 from functools import lru_cache
 
 logger = logging.getLogger(__name__)
@@ -18,19 +20,53 @@ class LLMService:
         self.rag_engine = RAGEngine()
 
     def _create_client(self) -> tuple[AsyncOpenAI, str]:
+        """
+        Creates and returns the LLM client based on the .env configuration.
+
+        It supports two providers:
+        1. 'ollama' - Local, free, no API key required.
+        2. 'openai' - Cloud providers like OpenAI or OpenRouter (via a custom base_url).
+
+        Returns:
+            A tuple of (AsyncOpenAI client, model_name string).
+        """
+        # ---- Provider: Ollama (Local) ----
         if settings.LLM_PROVIDER == "ollama":
             return (
+                # Ollama exposes an OpenAI-compatible API at /v1
                 AsyncOpenAI(base_url=settings.OLLAMA_BASE_URL, api_key="ollama"),
+                # Default local model (e.g., llama3.2:1b)
                 settings.OLLAMA_MODEL,
             )
+
+        # ---- Provider: OpenAI / OpenRouter (Cloud) ----
+        # 💡 FIX: Directly pass settings.OPENAI_API_KEY to prevent "Missing Header" errors.
         return (
-            AsyncOpenAI(api_key=settings.OPENAI_API_KEY),
+            AsyncOpenAI(
+                # The API key comes from .env (sk-... for OpenAI, sk-or-v1-... for OpenRouter)
+                api_key=settings.OPENAI_API_KEY,
+                # Allow overriding the base URL for OpenRouter or other OpenAI-compatible APIs
+                base_url=getattr(settings, "OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+            ),
+            # The cloud model name (e.g., meta-llama/llama-3.3-70b-instruct:free)
             settings.OPENAI_MODEL,
         )
 
     def _resolve_model(self, use_fast: bool = False) -> str:
-        if settings.LLM_PROVIDER == "ollama" and use_fast:
-            return settings.OLLAMA_MODEL_FAST
+        """
+        Selects the model name based on the provider and the 'use_fast' flag.
+        """
+        # For local Ollama, we have a fast model (e.g., qwen2.5:1.5b)
+        if settings.LLM_PROVIDER == "ollama":
+            if use_fast and hasattr(settings, "OLLAMA_MODEL_FAST"):
+                return settings.OLLAMA_MODEL_FAST
+            return self.default_model
+
+        # For Cloud/OpenRouter: If use_fast is requested, look for OPENAI_MODEL_FAST.
+        # If not found, safely fallback to default_model to prevent '400 Invalid Model' errors.
+        if use_fast and hasattr(settings, "OPENAI_MODEL_FAST") and settings.OPENAI_MODEL_FAST:
+            return settings.OPENAI_MODEL_FAST
+
         return self.default_model
 
     async def _rewrite_query(self, user_message: str, history: list[ChatMessage]) -> str:
@@ -56,6 +92,11 @@ class LLMService:
 
         try:
             resp = await self.client.chat.completions.create(
+                # OpenRouter optionally recommends these headers for tracking
+                extra_headers={
+                    "HTTP-Referer": "http://localhost:8000",
+                    "X-Title": "GenAI Chat",
+                },
                 model=self._resolve_model(use_fast=True),  # Use fast model for speed
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,  # 0.0 for deterministic output
@@ -126,6 +167,10 @@ class LLMService:
         messages = self._build_messages(user_message, history, docs, memories)
 
         resp = await self.client.chat.completions.create(
+            extra_headers={
+                "HTTP-Referer": "http://localhost:8000",
+                "X-Title": "GenAI Chat",
+            },
             model=self._resolve_model(use_fast),
             messages=messages,
             temperature=0.7,
@@ -140,6 +185,10 @@ class LLMService:
     async def stream_reply(
             self, user_message: str, history: list[ChatMessage], session_id: str, use_fast: bool = False
     ):
+        """
+        Public method: Asynchronous Generator that yields token-by-token responses.
+        Used for Server-Sent Events (SSE) streaming.
+        """
         # Use logging instead of print
         logger.info(f"▶️ [STREAM START] User: {user_message}, Session: {session_id}")
 
@@ -160,24 +209,107 @@ class LLMService:
             # 3. Save User Message (save the original message, not the rewritten one)
             self.rag_engine.store_user_message(user_message, session_id)
 
-            # 4. Call LLM
+            # 4. Define the tools available to the LLM (Calculator)
+            tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "calculate",
+                        "description": "Evaluate a mathematical expression. Use this for any math question.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "expression": {
+                                    "type": "string",
+                                    "description": "The math expression to evaluate, e.g., '2+2' or '1234 * 5678'"
+                                }
+                            },
+                            "required": ["expression"]
+                        }
+                    }
+                }
+            ]
+
+            # 5. Call LLM (with tools)
             logger.info("⏳ Calling LLM API...")
             stream = await self.client.chat.completions.create(
+                extra_headers={
+                    "HTTP-Referer": "http://localhost:8000",
+                    "X-Title": "GenAI Chat",
+                },
                 model=self._resolve_model(use_fast),
                 messages=messages,
                 temperature=0.7,
                 max_tokens=800,
+                tools=tools,  # 🔥 NEW: Pass tools to LLM
                 stream=True,
             )
 
             logger.info("✅ LLM Connected. Streaming started.")
 
+            # 🔥 NEW: Handle tool calls in the stream
+            tool_calls = []
             full_reply = ""
+
             async for chunk in stream:
-                delta = chunk.choices[0].delta.content or ""
-                if delta:
-                    full_reply += delta
-                    yield delta
+                delta = chunk.choices[0].delta
+
+                # Check if the LLM wants to call a tool
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        if tc.index >= len(tool_calls):
+                            tool_calls.append({"id": tc.id, "function": {"name": "", "arguments": ""}})
+                        if tc.function.name:
+                            tool_calls[tc.index]["function"]["name"] += tc.function.name
+                        if tc.function.arguments:
+                            tool_calls[tc.index]["function"]["arguments"] += tc.function.arguments
+                    continue  # Don't yield text while collecting tool calls
+
+                # Normal text streaming
+                if delta.content:
+                    full_reply += delta.content
+                    yield delta.content
+
+            # 🔥 NEW: If the LLM requested a tool, execute it and call LLM again
+            if tool_calls:
+                logger.info(f"🛠️ Tool Calls Requested: {tool_calls}")
+
+                # 1. Append the assistant's tool call message to history
+                messages.append({"role": "assistant", "tool_calls": tool_calls})
+
+                # 2. Execute each tool
+                for tc in tool_calls:
+                    if tc["function"]["name"] == "calculate":
+                        args = json.loads(tc["function"]["arguments"])
+                        expression = args.get("expression", "")
+                        logger.info(f"🧮 Calculating: {expression}")
+                        result = calculate(expression)
+
+                        # 3. Append the tool result to history
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "name": "calculate",
+                            "content": result
+                        })
+
+                # 4. Call the LLM again to get the final answer (non-streaming for simplicity)
+                logger.info("🔄 Calling LLM again with tool results...")
+                final_resp = await self.client.chat.completions.create(
+                    extra_headers={
+                        "HTTP-Referer": "http://localhost:8000",
+                        "X-Title": "GenAI Chat",
+                    },
+                    model=self._resolve_model(use_fast),
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=800,
+                )
+                final_answer = final_resp.choices[0].message.content or ""
+
+                # 5. Stream the final answer (yielding it as a single string to avoid SSE parsing issues)
+                if final_answer:
+                    yield final_answer
 
             logger.info(f"🏁 [STREAM END] Total generated: {len(full_reply)} chars.")
 
