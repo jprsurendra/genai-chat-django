@@ -1,17 +1,18 @@
 import ast
 import operator
 import logging
+from django.conf import settings
+from tavily import TavilyClient  # 🔥 NEW: Import Tavily for Web Search
 
 logger = logging.getLogger(__name__)
 
-# Safe operators for the calculator
 # Safe operators for the calculator
 OPERATORS = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
     ast.Div: operator.truediv,
-    ast.Pow: operator.pow,  # 🔥 NEW: Handles ** (Power)
+    ast.Pow: operator.pow,
     ast.USub: operator.neg,
 }
 
@@ -42,3 +43,31 @@ def calculate(expression: str) -> str:
     except Exception as e:
         logger.error(f"Calculator error for '{expression}': {e}")
         return f"Error: Could not calculate '{expression}'"
+
+
+# 🔥 NEW: Web Search Tool
+def web_search(query: str) -> str:
+    """
+    Searches the web for real-time information using Tavily.
+    Returns a summarized text of the top results.
+    """
+    try:
+        # Initialize the Tavily client with the API key from settings
+        tavily_client = TavilyClient(api_key=settings.TAVILY_API_KEY)
+
+        # Perform the search (search_depth="basic" is faster)
+        response = tavily_client.search(query=query, search_depth="basic", max_results=3)
+
+        # Extract and combine the results
+        results = response.get("results", [])
+        if not results:
+            return "No results found on the web."
+
+        formatted_results = []
+        for res in results:
+            formatted_results.append(f"Source: {res.get('url')}\nContent: {res.get('content')}")
+
+        return "\n\n".join(formatted_results)
+    except Exception as e:
+        logger.error(f"Web search error for '{query}': {e}")
+        return f"Error: Could not search the web for '{query}'"

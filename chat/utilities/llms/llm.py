@@ -2,7 +2,7 @@ from openai import AsyncOpenAI
 from django.conf import settings
 from chat.dtos import ChatMessage
 from chat.utilities.rags.rag_engine import RAGEngine
-from chat.utilities.tools import calculate  # 🔥 NEW: Import the Calculator tool
+from chat.utilities.tools import calculate, web_search  # 🔥 NEW: Import both tools
 import logging
 import json  # 🔥 NEW: For parsing tool arguments
 from functools import lru_cache
@@ -102,9 +102,16 @@ class LLMService:
                 temperature=0.0,  # 0.0 for deterministic output
                 max_tokens=100,
             )
-            rewritten = resp.choices[0].message.content.strip()
-            logger.info(f"🔄 Query Rewritten: '{user_message}' -> '{rewritten}'")
-            return rewritten
+
+            # 🔥 FIX: Safely extract the content to prevent NoneType errors
+            content = resp.choices[0].message.content
+            if content:
+                rewritten = content.strip()
+                logger.info(f"🔄 Query Rewritten: '{user_message}' -> '{rewritten}'")
+                return rewritten
+            else:
+                return user_message
+
         except Exception as e:
             logger.error(f"Query rewrite failed: {e}")
             return user_message  # Fallback to original if it fails
@@ -209,7 +216,7 @@ class LLMService:
             # 3. Save User Message (save the original message, not the rewritten one)
             self.rag_engine.store_user_message(user_message, session_id)
 
-            # 4. Define the tools available to the LLM (Calculator)
+            # 4. Define the tools available to the LLM (Calculator + Web Search)
             tools = [
                 {
                     "type": "function",
@@ -225,6 +232,24 @@ class LLMService:
                                 }
                             },
                             "required": ["expression"]
+                        }
+                    }
+                },
+                # 🔥 NEW: Web Search Tool Schema
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "description": "Search the internet for real-time information. Use this for news, weather, or current events.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string",
+                                    "description": "The search query, e.g., 'Weather in Delhi today'"
+                                }
+                            },
+                            "required": ["query"]
                         }
                     }
                 }
@@ -290,6 +315,19 @@ class LLMService:
                             "role": "tool",
                             "tool_call_id": tc["id"],
                             "name": "calculate",
+                            "content": result
+                        })
+                    # 🔥 NEW: Handle Web Search
+                    elif tc["function"]["name"] == "web_search":
+                        args = json.loads(tc["function"]["arguments"])
+                        query = args.get("query", "")
+                        logger.info(f"🌐 Searching Web: {query}")
+                        result = web_search(query)
+
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "name": "web_search",
                             "content": result
                         })
 
