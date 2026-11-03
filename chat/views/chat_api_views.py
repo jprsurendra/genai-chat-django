@@ -5,7 +5,8 @@ import tempfile
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
-from django.http import StreamingHttpResponse
+from django.http import StreamingHttpResponse, FileResponse
+from django.shortcuts import get_object_or_404
 from asgiref.sync import async_to_sync, sync_to_async
 from pydantic import ValidationError
 from rest_framework import status
@@ -47,8 +48,13 @@ class ChatAPIView(APIView):
             return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request):
+        logger.info(f"User {request.user.id} started a chat session.")
         try:
-            check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="chat")
+            # 🔥 SECURITY FIX: Use user_id instead of IP
+            # check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="chat")
+            user_id = request.user.id
+            check_rate_limit(str(user_id), scope="chat")
+            req = ChatRequest(**request.data)
 
             # User ID is extracted from the JWT token
             user_id = request.user.id
@@ -105,21 +111,40 @@ class ChatAPIView(APIView):
 
     def delete(self, request):
         try:
-            check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="clear")
+            user_id = request.user.id
+
+            # 🔥 SECURITY FIX: Use user_id instead of IP
+            # check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="clear")
+            check_rate_limit(str(user_id), scope="clear")
+
             user_id = request.user.id
         except PermissionDenied as e:
             return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
         try:
+            # 1. Purge ChromaDB (RAG memory and vectors)
             self.llm_service.clear_session(str(user_id))
-            # Soft delete all chat history from MySQL for this user
-            ChatSession.objects.filter(user=request.user).update(is_deleted=True)
-            ChatMessage.objects.filter(session__user=request.user).update(is_deleted=True)
+
+            # 2. Purge physical files from disk (media/documents/user_<id>/)
+            docs = UploadedDocument.objects.filter(user=request.user)
+            for doc in docs:
+                if doc.file and os.path.exists(doc.file.path):
+                    try:
+                        os.remove(doc.file.path)
+                    except OSError as e:
+                        logger.error(f"Failed to delete file {doc.file.path}: {e}")
+
+            # 3. Delete DB records permanently (Hard Delete for GDPR)
+            # Note: We use .delete() instead of .update(is_deleted=True) to fully remove data.
+            ChatMessage.objects.filter(session__user=request.user).delete()
+            ChatSession.objects.filter(user=request.user).delete()
+            UploadedDocument.objects.filter(user=request.user).delete()
+
         except Exception:
             logger.exception("Clearing session failed")
             return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response({"message": "Memory, documents, and chat history cleared."})
+        return Response({"message": "All data (MySQL, Disk, ChromaDB) permanently deleted."})
 
 
 class ChatStreamAPIView(ChatAPIView):
@@ -130,8 +155,12 @@ class ChatStreamAPIView(ChatAPIView):
 
     def post(self, request):
         try:
-            check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="chat")
             user_id = request.user.id
+
+            # 🔥 SECURITY FIX: Use user_id instead of IP
+            # check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="chat")
+            check_rate_limit(str(user_id), scope="chat")
+
             req = ChatRequest(**request.data)
         except PermissionDenied as e:
             return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
@@ -297,9 +326,13 @@ class UploadDocumentAPIView(APIView):
 
     def post(self, request):
         try:
-            upload_limit = getattr(settings, "UPLOAD_RATE_LIMIT", 5)
-            check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), limit=upload_limit, scope="upload")
             user_id = request.user.id
+            upload_limit = getattr(settings, "UPLOAD_RATE_LIMIT", 5)
+
+            # 🔥 SECURITY FIX: Use user_id instead of IP
+            # check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), limit=upload_limit, scope="upload")
+            check_rate_limit(str(user_id), limit=upload_limit, scope="upload")
+
         except PermissionDenied as e:
             return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
@@ -352,3 +385,22 @@ class UploadDocumentAPIView(APIView):
             # If processing fails, delete the file and DB entry
             doc.delete()
             return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DownloadDocumentAPIView(APIView):
+    """
+    Secure endpoint to download a document.
+    Ensures the user is the owner of the document.
+    """
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, document_id):
+        # Ensure the document belongs to the requesting user
+        doc = get_object_or_404(UploadedDocument, id=document_id, user=request.user)
+
+        try:
+            # FileResponse streams the file efficiently
+            return FileResponse(doc.file.open('rb'), as_attachment=True, filename=doc.filename)
+        except FileNotFoundError:
+            return Response({"error": "File not found on server."}, status=status.HTTP_404_NOT_FOUND)

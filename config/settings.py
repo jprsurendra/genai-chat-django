@@ -131,3 +131,12 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # Media files (User uploaded files)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+
+# ==========================================
+# LOGGING CONFIGURATION
+# ==========================================
+try:
+    from .logger_config import LOGGING
+except ImportError:
+    pass
