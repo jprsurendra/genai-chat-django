@@ -48,6 +48,7 @@ class ChatAPIView(APIView):
             return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request):
+        logger.info(f"User {request.user.id} started a chat session.")
         try:
             # 🔥 SECURITY FIX: Use user_id instead of IP
             # check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="chat")

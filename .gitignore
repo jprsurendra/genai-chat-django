@@ -70,3 +70,4 @@ ehthumbs.db
 Thumbs.db
 
 rag/rag_data/chroma_db/
+logs/
