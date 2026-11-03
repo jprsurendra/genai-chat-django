@@ -89,7 +89,8 @@ LLM_PROVIDER=openai
 # ---- OpenRouter settings ----
 OPENAI_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxx
 OPENAI_BASE_URL=https://openrouter.ai/api/v1
-OPENAI_MODEL=meta-llama/llama-3.3-70b-instruct:free
+#OPENAI_MODEL=meta-llama/llama-3.3-70b-instruct:free # 'This model is unavailable for free. The paid version is available now - use this slug instead: meta-llama/llama-3.3-70b-instruct
+OPENAI_MODEL=openrouter/free
 ```
 
 > ⚠️ The API key is a secret. It lives in `.env`, which must stay out of Git.
