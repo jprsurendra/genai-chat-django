@@ -16,9 +16,10 @@ This document tracks what has been built so far and what is planned next. The pr
 | `004-clean-up` | Session isolation, show sources | ✅ Done |
 | `005-db-auth` | MySQL, JWT login, file storage | ✅ Done |
 | `006-rag-quality` | Hybrid search, query rewriting, evaluation (reranking carried over) | ✅ Done |
-| `007-agent-tools` | Function calling, bigger models | ⏭️ Next up |
-| `008-production` | Redis, Celery, Docker, observability | ⏳ Upcoming |
-| `009-voice-ui` | Voice, vision, Hindi UI | 💭 Future (optional) |
+| `007-security-hardening` | Secure media access, prompt injection defense, Redis rate limiting, complete data erasure | 🚧 In progress |
+| `008-agent-tools` | Function calling, bigger models | ⏭️ Next up |
+| `009-production` | Redis caching, Celery, Docker, observability | ⏳ Upcoming |
+| `010-voice-ui` | Voice, vision, Hindi UI | 💭 Future (optional) |
 
 ---
 
@@ -31,11 +32,13 @@ The app now has login, chat history in MySQL, document upload and an **improved 
 - `evaluate_rag.py` measures retrieval, but so far with only a handful of questions, so treat its score as a rough signal, not a guarantee.
 - **Reranking** is not done yet and is carried over (see Branch 006 below).
 
-**Next task:** Branch 007. Merge Branch 006 into `main`, then turn the chatbot into an agent by adding tool calling.
+Branch 006 is merged into `main`.
+
+**Current task:** Branch 007. The Enterprise Architecture Review found security problems that must be fixed before the app gets more powerful. Secure file downloads and prompt hardening are done; Redis rate limiting and complete data erasure are still open. After that comes the agent work (Branch 008).
 
 ---
 
-## ✅ Branch 006: `genai-chat-006-rag-quality` (done)
+## ✅ Branch 006: `genai-chat-006-rag-quality` (done, merged)
 
 **Goal:** make retrieval accurate, so the AI answers from the right context and stops guessing.
 
@@ -51,7 +54,20 @@ The app now has login, chat history in MySQL, document upload and an **improved 
 
 ---
 
-## 🚀 Branch 007: `genai-chat-007-agent-tools` (next)
+## 🛡️ Branch 007: `genai-chat-007-security-hardening` (in progress)
+
+**Goal:** fix the critical security vulnerabilities found in the Enterprise Architecture Review. The review's point was clear: secure the foundation *before* adding agent tools. A database-query tool added on top of the current setup could become a path for data leaks.
+
+- **Secure media files:** ✅ done. The public `/media/` route is removed and uploads are served through an authenticated download API that checks the file's owner.
+- **Prompt injection defense:** ✅ done. The system prompt treats retrieved text as data only, and the memory feature stores only factual statements.
+- **Redis rate limiting:** ⏳ to do. Replace the in-memory, per-IP limiter with a Redis-backed one: per user for chat and upload, per IP for login and register.
+- **Data erasure:** ⏳ to do. "Clear All" must delete from MySQL, from disk and from ChromaDB.
+
+> Redis is introduced here for rate limiting. Branch 009 reuses it for caching.
+
+---
+
+## 🚀 Branch 008: `genai-chat-008-agent-tools` (next)
 
 **Goal:** turn the chatbot into an agent that can do things, not only answer.
 
@@ -66,7 +82,7 @@ The app now has login, chat history in MySQL, document upload and an **improved 
 
 ---
 
-## ⚡ Branch 008: `genai-chat-008-production` (upcoming)
+## ⚡ Branch 009: `genai-chat-009-production` (upcoming)
 
 **Goal:** get the app ready for real users: scalable and safer.
 
@@ -78,7 +94,7 @@ The app now has login, chat history in MySQL, document upload and an **improved 
 
 ---
 
-## 💬 Branch 009: `genai-chat-009-voice-ui` (future, optional)
+## 💬 Branch 010: `genai-chat-010-voice-ui` (future, optional)
 
 **Goal:** go beyond text.
 
@@ -108,17 +124,17 @@ This project is meant to teach GenAI engineering, not only to ship features. The
 - **Graph RAG:** storing data as a knowledge graph (nodes and edges).
 - **Multi-vector retrieval:** several vectors per document (question, answer, summary).
 
-### 4. 🤖 AI agents (Branch 007)
+### 4. 🤖 AI agents (Branch 008)
 - **ReAct pattern:** reasoning and acting, so the model thinks before each step.
 - **Multi-agent systems:** frameworks such as AutoGen, CrewAI or LangGraph.
 - **MCP (Model Context Protocol):** an open standard for connecting AI to tools.
 
-### 5. ⚡ Production and scaling (Branch 008)
+### 5. ⚡ Production and scaling (Branch 009)
 - **LLMOps:** observability with Langfuse or LangSmith.
 - **Evaluation:** RAGAS to measure RAG quality automatically.
 - **High-performance serving:** vLLM or TGI (Text Generation Inference).
 
-### 6. 🎨 Multimodal and vision (Branch 009)
+### 6. 🎨 Multimodal and vision (Branch 010)
 - **Vision models:** LLaVA or GPT-4o Vision for image understanding.
 - **Speech:** Whisper (speech to text) and text to speech.
 
@@ -135,7 +151,7 @@ These came up in earlier branch notes and are not placed in a branch yet:
 
 ## 💡 Suggested next step
 
-Merge Branch 006 into `main`, then start Branch 007 with the simplest tool first: the **calculator**. After that add **web search**, and the **database query** last, because it needs the most care with permissions. Keep local Ollama as the default and make the larger model an option. In parallel, keep growing the evaluation set, so the RAG quality does not quietly get worse while the app gains new features.
+Finish Branch 007 first: Redis rate limiting and complete data erasure. Then start Branch 008 with the simplest tool, the **calculator**. After that add **web search**, and the **database query** last, because it needs the most care with permissions (and is exactly why the security work comes first). Keep local Ollama as the default and make the larger model an option. In parallel, keep growing the evaluation set, so the RAG quality does not quietly get worse while the app gains new features.
 
 ---
 
@@ -146,7 +162,7 @@ Merge Branch 006 into `main`, then start Branch 007 with the simplest tool first
 
 अब तक हमारा project एक छोटे chatbot से बढ़कर एक पूरा GenAI application बन गया है, जिसमें login, database, RAG और file upload हैं। आगे की योजना यह है:
 
-**Branch 006: RAG Quality (पूरी हुई ✅)**
+**Branch 006: RAG Quality (पूरी हुई और main में merge ✅)**
 लक्ष्य: retrieval को ज़्यादा सटीक बनाना, ताकि AI सही context से जवाब दे।
 - **Hybrid Search:** ✅ Vector Search के साथ BM25 (keyword search)।
 - **Query Rewriting:** ✅ follow-up सवाल (जैसे "उसका दाम क्या है?") को पहले पिछली बातचीत से पूरा सवाल बनाना, फिर search करना।
@@ -154,21 +170,28 @@ Merge Branch 006 into `main`, then start Branch 007 with the simplest tool first
 - **Reranking:** ⏳ अभी नहीं हुआ, आगे के लिए बचा है।
 - **आगे के लिए बचा काम:** test set को 20-30 सवालों तक बढ़ाना (ऐसे सवाल भी जिनका जवाब document में नहीं है), और Hit@1, Hit@3, MRR नापना।
 
-**Branch 007: Agent Tools**
+**Branch 007: Security Hardening (अभी चल रही है)**
+लक्ष्य: Enterprise Architecture Review में मिली गंभीर सुरक्षा खामियाँ ठीक करना। Agent Tools (ख़ासकर MySQL query tool) जोड़ने से पहले यह ज़रूरी है, वरना वह data leak का रास्ता बन सकता है।
+- **Secure Media Files:** ✅ `/media/` का सीधा रास्ता बंद, और फाइल का owner जाँचने वाला download API।
+- **Prompt Injection Defense:** ✅ retrieved text को सिर्फ़ "data" माना जाएगा, "निर्देश" नहीं।
+- **Redis Rate Limiting:** ⏳ in-memory limiter की जगह Redis (chat/upload के लिए per-user, login/register के लिए per-IP)।
+- **Data Erasure:** ⏳ "Clear All" से MySQL, disk और ChromaDB तीनों से data हटे।
+
+**Branch 008: Agent Tools**
 लक्ष्य: chatbot को ऐसा Agent बनाना जो काम भी कर सके।
 - **Tool Calling:** Web Search, Calculator और MySQL से data निकालना।
 - **Multi-Step Reasoning:** AI खुद तय करे कि कौन सा tool कब इस्तेमाल करना है।
 - **Bigger LLMs:** छोटे model (1.5B) tool calling में कमज़ोर हैं, इसलिए बड़े model (GPT-4o या Llama 3 70B) पर switch करना। Local Ollama default रहेगा।
 
-**Branch 008: Production**
+**Branch 009: Production**
 लक्ष्य: ऐप को असली users के लिए तैयार करना।
 - **Redis Caching**, **Celery** (बड़े PDF का background processing), **Docker Compose** (एक command में पूरा app), **Observability** (Langfuse जैसे tools) और UI polish (dark mode, loading spinner, बेहतर error messages)।
 
-**Branch 009: Voice / UI (optional)**
+**Branch 010: Voice / UI (optional)**
 - Voice input/output, Image upload (Vision) और पूरा Hindi UI।
 
 **🎓 Deep Learning Track (साथ-साथ सीखने के विषय):** LLM के अंदर (Transformers, Tokenization, Embeddings), Fine-tuning (LoRA/PEFT), Advanced RAG (Reranking, Graph RAG), AI Agents (ReAct, MCP), Production (Langfuse, RAGAS, vLLM) और Multimodal (Vision, Whisper)।
 
-**मेरी सलाह:** Branch 006 को main में merge कीजिए, फिर Branch 007 में सबसे आसान tool (Calculator) से शुरू कीजिए। उसके बाद Web Search, और सबसे आख़िर में Database query। साथ-साथ evaluation set बढ़ाते रहिए, ताकि नए features जुड़ने पर RAG की गुणवत्ता चुपचाप न गिरे।
+**मेरी सलाह:** पहले Branch 007 पूरी कीजिए (Redis rate limiting और complete data erasure)। फिर Branch 008 में सबसे आसान tool (Calculator) से शुरू कीजिए। उसके बाद Web Search, और सबसे आख़िर में Database query। साथ-साथ evaluation set बढ़ाते रहिए, ताकि नए features जुड़ने पर RAG की गुणवत्ता चुपचाप न गिरे।
 
 </details>
