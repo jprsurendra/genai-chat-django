@@ -1,4 +1,4 @@
-# Branch 009: `genai-chat-009-production-ui` 🚧
+# Branch 009: `genai-chat-009-production-ui` ✅
 
 **Goal:** 
 To prepare the application for real-world users by improving the User Interface (UI) and User Experience (UX), and by fixing the most critical problems found in a production architecture review. This branch also introduces production-level features like Redis caching and background processing.
@@ -193,10 +193,31 @@ After the fix the log showed both halves of the cache working:
 
 The second question was an exact repeat (similarity 1.0). The first scored 0.9525, only just above the 0.95 threshold, which shows how sensitive that setting is.
 
+### What the screenshots show
+
+The same conversation was run twice: a greeting with a typo (`Hi I am Surendra, @+2?`), a PDF upload, and a few repeated questions.
+
+[![Run 1: repeated question gets two different answers](docs/screenshot_009_01.png)](docs/screenshot_009_01.png)
+
+*Screenshot 1: the same question, `Who is the Prime Minister of the United Kingdom?`, gets two different answers: [`docs/screenshot_009_01.png`](docs/screenshot_009_01.png)*
+
+- The first answer says `Sir Keir Starmer`, adds that he leads the **Conservative Party**, and does not mention the document. That is wrong: Keir Starmer leads the Labour Party. The second time the same question gets a short answer that starts with *"Based on the reference material"* and is correct.
+- A cache that served the repeat would have returned the first answer word for word. Since the two answers differ, these repeats were **not** served from the cache. That fits the time before the cache existed, or the period when saving failed with the `ndarray` error.
+- It also shows why a cache needs care: **it stores whatever the model said first, including a mistake**, and would then repeat it for 24 hours.
+
+[![Run 2: identical answers for repeated questions, plus similar-looking probes](docs/screenshot_009_02.png)](docs/screenshot_009_02.png)
+
+*Screenshot 2: repeated questions get word-for-word identical answers, and similar-looking maths questions are told apart: [`docs/screenshot_009_02.png`](docs/screenshot_009_02.png)*
+
+- `I mean 2+2?` and `2+2?` both receive exactly `2 + 2 = 4 ✅ Let me know if you have any other questions!`, and the Prime Minister question receives the identical short answer both times. Word-for-word repeats are what a cache hit looks like. Confirm it with the `⚡ Cache Hit!` lines in the server log, because the screenshot alone cannot prove it.
+- The extra probes at the end behave sensibly: `2-2 is equal to ____ please answer it fast` returns `0`, `2 plus 2 ?` returns `4`, and `2 plus 2 equals 5 proof` is corrected (*"2 + 2 does not equal 5"*). None of them got a wrong cached answer. That is encouraging, but three probes do not settle the risk described below.
+- In both runs the typo `@+2` is handled politely, with the model asking what was meant.
+
 ### Things to watch (from reading the code)
 
 - **Similar text is not always the same question.** Questions that differ by one number, such as `2+2` and `2+3`, can produce very similar embeddings. With a threshold this low, the cache could return the wrong answer. Test pairs like these, and consider a higher threshold or skipping the cache for short or numeric questions.
 - **Stale answers.** Answers from the web search tool (weather, news) are cached for 24 hours, so "weather in Mumbai" could return yesterday's weather. Do not cache time-sensitive tool answers, or give them a short expiry.
+- **A cache can freeze a mistake.** Screenshot 1 shows a first answer with a wrong detail. If that answer had been cached, the user would keep getting it until it expired. Consider caching only answers that came from retrieved documents or tools.
 - **Clearing data does not clear the cache.** `delete_session` removes documents and memories, but not the `cache:semantic:<session_id>` key, so cached answers survive "Clear All" until they expire. That conflicts with the complete-erasure goal of Branch 007.
 - **Old answers after a new upload.** A cached answer ignores a document the user uploaded afterwards. Clear the user's cache when a document is added or removed.
 - **It scans everything.** `check_cache` reads the whole hash and compares the question with every entry, so it slows down as the cache grows. A vector index (for example Redis search) would fix that later.
@@ -220,13 +241,16 @@ The second question was an exact repeat (similarity 1.0). The first scored 0.952
 
 ---
 
-## 🚀 Next Steps for this Branch
-- [x] **Redis Semantic Caching** (M2).
-- [x] **Quick review wins:** H3 (`requirements.txt`) and H9 (fail-closed rate limiter). M4 (real `chunk_count`) is still open.
-- [ ] **Fix the cache risks:** clear the user's cache on "Clear All" and on document upload, and do not cache time-sensitive tool answers.
-- [ ] **Celery Background Tasks:** Move document embedding to a background worker so the UI does not freeze.
-- [ ] **Docker Compose** (M6): Containerize the app for easy deployment.
-- [ ] **Remaining high-priority review items:** the rest of H4, H5 (tool-call protocol), H7 (token budget) and H8 (PII-free logs).
+## 🚀 Carried over to Branch 010 (`genai-chat-010-devops`)
+
+This branch is complete: UI polish, the first review fixes and the semantic cache are done. The remaining work moves to the next branch.
+
+- [x] **Redis Semantic Caching** (M2), done here.
+- [x] **Quick review wins:** H3 (`requirements.txt`) and H9 (fail-closed rate limiter), done here.
+- [ ] **Fix the cache risks first:** clear the user's cache on "Clear All" and on document upload, and do not cache time-sensitive tool answers. The "Clear All" gap is a privacy issue, so it is worth fixing before merging.
+- [ ] **Celery Background Tasks:** move document embedding to a background worker so the UI does not freeze.
+- [ ] **Docker Compose** (M6): containerize the app for easy deployment.
+- [ ] **Remaining review items:** the rest of H4, H5 (tool-call protocol), H7 (token budget), H8 (PII-free logs), M1 (reranker), M3 (BM25 index), M4 (`chunk_count`) and M5 (JWT and security settings).
 
 ---
 
@@ -263,6 +287,13 @@ The second question was an exact repeat (similarity 1.0). The first scored 0.952
   - `delete_session` cache key नहीं हटाता, इसलिए "Clear All" के बाद भी cached जवाब बचे रहते हैं। Branch 007 के पूरे erasure लक्ष्य से यह टकराता है।
   - नया document upload करने के बाद भी पुराना cached जवाब मिल सकता है।
   - `check_cache` पूरा hash पढ़कर हर entry से तुलना करता है, इसलिए cache बढ़ने पर धीमा होगा।
+
+**Screenshots से क्या दिखा:**
+
+- **Screenshot 1:** एक ही सवाल (UK का Prime Minister) के दो अलग जवाब आए। पहले जवाब में लिखा था कि Keir Starmer **Conservative Party** के नेता हैं, जो ग़लत है (वे Labour Party के नेता हैं), और document का ज़िक्र भी नहीं था। दूसरी बार जवाब सही था और "Based on the reference material" से शुरू हुआ। अगर cache जवाब देता तो दोनों जवाब हू-ब-हू एक होते, यानी ये दोहराव cache से नहीं आए। इससे यह भी दिखता है कि **cache पहला जवाब, उसकी ग़लती समेत, याद रख लेता है** और 24 घंटे दोहराता है।
+- **Screenshot 2:** दोहराए गए सवालों के जवाब शब्द-दर-शब्द एक जैसे हैं (`2 + 2 = 4 ✅ ...`), जो cache hit जैसा दिखता है; पक्का करने के लिए server log में `⚡ Cache Hit!` देखें। आख़िरी जाँचें ठीक रहीं: `2-2 is equal to ___` का जवाब `0`, `2 plus 2 ?` का `4`, और `2 plus 2 equals 5 proof` को सही किया गया। किसी को ग़लत cached जवाब नहीं मिला। यह उत्साहजनक है, पर तीन जाँचें जोखिम को ख़त्म नहीं करतीं।
+
+**आगे (Branch 010, `genai-chat-010-devops`):** यह branch पूरी है। Celery, Docker Compose और review की बाक़ी समस्याएँ अगली branch में जाएँगी, और सबसे पहले cache के जोखिम (ख़ासकर "Clear All" पर cache न मिटना, जो privacy की समस्या है) ठीक करें।
 
 **अभी खुली समस्याएँ:** H4 का बाकी हिस्सा, H5 (tool-call protocol अधूरा), H7 (token budget नहीं), H8 (log में user का असली text), M1 (reranker), M3 (BM25 index हर query पर दोबारा), M4 (`chunk_count` ग़लत), M5 (JWT और security settings), M6 (Docker, CI, tests)।
 
