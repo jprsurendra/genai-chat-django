@@ -13,6 +13,7 @@ const logoutBtn = document.getElementById("logoutBtn");
 const navUsername = document.getElementById("navUsername");
 const historyList = document.getElementById("historyList");
 const newChatBtn  = document.getElementById("newChatBtn");
+const themeToggle = document.getElementById("themeToggle"); // 🔥 NEW
 
 let history = [];
 let isBusy = false;
@@ -58,14 +59,6 @@ async function fetchWithAuth(url, options = {}) {
     }
 
     return response;
-}
-
-// Helper to get Auth Headers (kept for compatibility)
-function getAuthHeaders() {
-    return {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${localStorage.getItem("access_token")}`
-    };
 }
 
 // ==========================================
@@ -127,23 +120,37 @@ function addMessage(role, content, timestamp = null, streaming = false) {
   return bubble;
 }
 
-// Helper function to render the document as a chat bubble
-function renderDocumentBubble(filename, fileUrl, timestamp) {
+function renderDocumentBubble(filename, fileUrl, timestamp, docId) {
     const wrap = document.createElement("div");
-    wrap.className = "msg assistant"; // Re-use assistant styling for left alignment
+    wrap.className = "msg assistant";
 
     const bubble = document.createElement("div");
     bubble.className = "bubble";
-    bubble.style.backgroundColor = "#e9ecef"; // Slightly different shade
+    bubble.style.backgroundColor = "#e9ecef";
 
     const link = document.createElement("a");
+    link.href = "javascript:void(0);";
+    link.onclick = async () => {
+        try {
+            const resp = await fetchWithAuth(`/api/download/${docId}`);
+            if (!resp.ok) throw new Error("Download failed");
 
-    // 🔥 Fix: Ensure the path starts with /media/ so Django serves it correctly
-    link.href = fileUrl.startsWith('/media/') ? fileUrl : `/media/${fileUrl}`;
+            const blob = await resp.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            alert("Error downloading file: " + err.message);
+        }
+    };
 
-    link.target = "_blank";
     link.className = "text-decoration-none";
-    link.innerHTML = `<i class="bi bi-file-earmark-text"></i> <b>Attached Document:</b> ${filename}`;
+    link.innerHTML = `<i class="bi bi-download"></i> <b>Download:</b> ${filename}`;
 
     bubble.appendChild(link);
 
@@ -179,7 +186,6 @@ input.addEventListener("keydown", (e) => {
 // ==========================================
 async function loadSidebarHistory() {
     try {
-        // Use fetchWithAuth
         const resp = await fetchWithAuth("/api/chat/history");
         if (!resp.ok) return;
 
@@ -250,7 +256,6 @@ async function loadSidebarHistory() {
 
 async function loadChatSession(sessionId) {
     try {
-        // Use fetchWithAuth
         const resp = await fetchWithAuth(`/api/chat/history?session_id=${sessionId}`);
         if (!resp.ok) return;
 
@@ -258,7 +263,6 @@ async function loadChatSession(sessionId) {
         currentSessionId = data.id;
         chatBox.innerHTML = "";
 
-        // 1. Create a combined list of messages and documents
         let combinedItems = [];
 
         if (data.messages) {
@@ -276,6 +280,7 @@ async function loadChatSession(sessionId) {
             data.documents.forEach(doc => {
                 combinedItems.push({
                     type: 'document',
+                    id: doc.id,
                     filename: doc.filename,
                     file_url: doc.file,
                     timestamp: new Date(doc.uploaded_at)
@@ -283,18 +288,15 @@ async function loadChatSession(sessionId) {
             });
         }
 
-        // 2. Sort the combined list by timestamp (oldest first)
         combinedItems.sort((a, b) => a.timestamp - b.timestamp);
 
-        // 3. Render them in order
         if (combinedItems.length > 0) {
             combinedItems.forEach(item => {
                 if (item.type === 'message') {
                     addMessage(item.role, item.content, item.timestamp);
-                    // Update history for the LLM context
                     history.push({ role: item.role, content: item.content });
                 } else if (item.type === 'document') {
-                    renderDocumentBubble(item.filename, item.file_url, item.timestamp);
+                    renderDocumentBubble(item.filename, item.file_url, item.timestamp, item.id);
                 }
             });
         } else {
@@ -350,7 +352,6 @@ form.addEventListener("submit", async (e) => {
   let sourcesText = "";
 
   try {
-    // Use fetchWithAuth here as well
     const resp = await fetchWithAuth("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -455,18 +456,23 @@ fileUpload.addEventListener("change", async (e) => {
   uploadBtn.disabled = true;
 
   addMessage("user", `📎 ${file.name}`);
-  const bubble = addMessage("assistant", "Uploading and indexing document...", null, true);
+
+  // 🔥 NEW: Show a Bootstrap spinner while uploading
+  const bubble = addMessage("assistant", "", true);
+  bubble.innerHTML = `
+    <div class="d-flex align-items-center">
+      <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+      <span>Uploading and indexing document...</span>
+    </div>`;
 
   try {
     const formData = new FormData();
     formData.append("file", file);
 
-    // Add session_id to formData if we are in an active session
     if (currentSessionId) {
         formData.append("session_id", currentSessionId);
     }
 
-    // Use fetchWithAuth (Note: Don't set Content-Type manually for FormData)
     const resp = await fetchWithAuth("/api/upload", {
       method: "POST",
       body: formData
@@ -481,7 +487,6 @@ fileUpload.addEventListener("change", async (e) => {
 
     let successHtml = renderMarkdown(data.message || "Document uploaded.");
 
-    // Add Download Link
     if (data.file_url) {
         let safeUrl = data.file_url.startsWith('/media/') ? data.file_url : `/media/${data.file_url}`;
         successHtml += `<div class="mt-2"><a href="${safeUrl}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i> Download ${data.filename}</a></div>`;
@@ -518,6 +523,40 @@ clearBtn.addEventListener("click", async () => {
 
   startNewChat();
 });
+
+// ==========================================
+// 8. Dark Mode Toggle
+// ==========================================
+const themeIcon = themeToggle ? themeToggle.querySelector("i") : null;
+
+// Check local storage for saved theme on page load
+if (localStorage.getItem("theme") === "dark") {
+    document.body.classList.add("dark-mode");
+    if (themeIcon) {
+        themeIcon.classList.remove("bi-moon-stars");
+        themeIcon.classList.add("bi-sun");
+    }
+}
+
+if (themeToggle) {
+    themeToggle.addEventListener("click", () => {
+        document.body.classList.toggle("dark-mode");
+
+        if (document.body.classList.contains("dark-mode")) {
+            localStorage.setItem("theme", "dark");
+            if (themeIcon) {
+                themeIcon.classList.remove("bi-moon-stars");
+                themeIcon.classList.add("bi-sun");
+            }
+        } else {
+            localStorage.setItem("theme", "light");
+            if (themeIcon) {
+                themeIcon.classList.remove("bi-sun");
+                themeIcon.classList.add("bi-moon-stars");
+            }
+        }
+    });
+}
 
 // Load history on page load
 loadSidebarHistory();
