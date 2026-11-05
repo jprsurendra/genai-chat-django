@@ -3,6 +3,8 @@ import logging
 import os
 import re
 import uuid
+import json  # 🔥 NEW: For storing JSON in Redis
+import redis  # 🔥 NEW: For caching
 
 import chromadb
 import numpy as np
@@ -52,6 +54,19 @@ class RAGEngine:
         # Create or get collections
         self.documents = self._collection(self.DOCS_COLLECTION)
         self.memory = self._collection(self.MEMORY_COLLECTION)
+
+        # 🔥 NEW: Initialize Redis for Semantic Caching
+        try:
+            self.redis_client = redis.Redis(
+                host=getattr(settings, "REDIS_HOST", "localhost"),
+                port=getattr(settings, "REDIS_PORT", 6379),
+                db=getattr(settings, "REDIS_DB", 0),
+                decode_responses=True,
+                socket_timeout=1.0
+            )
+        except Exception as e:
+            logger.error(f"Redis connection failed for caching: {e}")
+            self.redis_client = None
 
     def _collection(self, name: str):
         """Helper method to create/get a collection with cosine distance metric."""
@@ -273,6 +288,82 @@ class RAGEngine:
         """Deletes all documents and memories associated with a specific session."""
         for col in (self.documents, self.memory):
             col.delete(where={"session_id": session_id})
+
+    # =====================================================================
+    # 🔥 NEW: SEMANTIC CACHING METHODS
+    # =====================================================================
+
+    def _get_query_embedding(self, query: str) -> list[float]:
+        """Generates a vector for the query string."""
+        return self.embedding_fn([query])[0]
+
+    def _cosine_similarity(self, vec1: list[float], vec2: list[float]) -> float:
+        """Calculates similarity between two vectors."""
+        return float(np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2)))
+
+    def check_cache(self, query: str, session_id: str) -> str | None:
+        """
+        Checks if a similar query has been answered before.
+        Returns the cached answer if similarity > threshold.
+        """
+        if self.redis_client is None:
+            return None
+
+        try:
+            # 1. Get embedding for the new query
+            query_vec = self._get_query_embedding(query)
+
+            # 2. Get all cached queries for this session
+            cache_key = f"cache:semantic:{session_id}"
+            cached_items = self.redis_client.hgetall(cache_key)
+
+            best_match = None
+            highest_similarity = 0.0
+
+            # 3. Compare with all cached queries
+            for cached_query, cached_data in cached_items.items():
+                data = json.loads(cached_data)
+                cached_vec = data["embedding"]
+
+                similarity = self._cosine_similarity(query_vec, cached_vec)
+
+                if similarity > highest_similarity:
+                    highest_similarity = similarity
+                    best_match = data["answer"]
+
+            # 4. If similarity is high enough, return the cached answer
+            threshold = getattr(settings, "SIMILARITY_THRESHOLD", 0.95)
+            if highest_similarity >= threshold:
+                logger.info(f"⚡ Cache Hit! Similarity: {highest_similarity:.4f}")
+                return best_match
+
+        except Exception as e:
+            logger.error(f"Cache check failed: {e}")
+
+        return None
+
+    def save_to_cache(self, query: str, answer: str, session_id: str):
+        """Saves the query, its embedding, and the answer to Redis."""
+        if self.redis_client is None:
+            return
+
+        try:
+            query_vec = self._get_query_embedding(query)
+            cache_key = f"cache:semantic:{session_id}"
+            ttl = getattr(settings, "CACHE_TTL", 86400)
+
+            # Store as a JSON string
+            cache_data = json.dumps({
+                "embedding": query_vec,
+                "answer": answer
+            })
+
+            self.redis_client.hset(cache_key, query, cache_data)
+            self.redis_client.expire(cache_key, ttl)
+            logger.info(f"💾 Saved to Cache: '{query}'")
+
+        except Exception as e:
+            logger.error(f"Cache save failed: {e}")
 
     # =====================================================================
     # ⚠️ DEBUGGING & EDUCATIONAL METHODS (NOT FOR PRODUCTION USE)
