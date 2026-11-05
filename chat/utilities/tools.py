@@ -1,8 +1,6 @@
 import ast
 import operator
 import logging
-from django.conf import settings
-from tavily import TavilyClient  # 🔥 NEW: Import Tavily for Web Search
 
 logger = logging.getLogger(__name__)
 
@@ -20,18 +18,24 @@ OPERATORS = {
 def calculate(expression: str) -> str:
     """
     Safely evaluates a mathematical expression.
+    Includes a limit on exponentiation to prevent CPU/Memory DoS attacks (e.g., 9**9**9).
     """
     try:
-        # 🔥 FIX: Convert '^' (common math syntax) to '**' (Python syntax for power)
         expression = expression.replace('^', '**')
-
-        # Parse the expression into a syntax tree (safe from code injection)
         node = ast.parse(expression, mode='eval').body
 
         def _eval(node):
             if isinstance(node, ast.Constant):
                 return node.value
             elif isinstance(node, ast.BinOp):
+                # 🔥 SECURITY FIX (H2): Prevent DoS via huge exponents
+                if isinstance(node.op, ast.Pow):
+                    left = _eval(node.left)
+                    right = _eval(node.right)
+                    # Limit the exponent and base to avoid freezing the CPU
+                    if abs(right) > 10 or abs(left) > 10000:
+                        raise ValueError("Exponent too large. Please use smaller numbers.")
+                    return operator.pow(left, right)
                 return OPERATORS[type(node.op)](_eval(node.left), _eval(node.right))
             elif isinstance(node, ast.UnaryOp):
                 return OPERATORS[type(node.op)](_eval(node.operand))
@@ -52,6 +56,9 @@ def web_search(query: str) -> str:
     Returns a summarized text of the top results.
     """
     try:
+        from tavily import TavilyClient
+        from django.conf import settings
+
         # Initialize the Tavily client with the API key from settings
         tavily_client = TavilyClient(api_key=settings.TAVILY_API_KEY)
 

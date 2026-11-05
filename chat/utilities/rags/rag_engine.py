@@ -72,7 +72,9 @@ class RAGEngine:
         2. Extracts only words (ignores punctuation).
         3. Ignores short words (<= 2 chars) like 'is', 'the', '2', '+'.
         """
-        words = re.findall(r'\w+', text.lower())
+        # 🔥 FIX (H1): Match words in both English and Hindi (Devanagari block)
+        # \w+ in Python misses Hindi vowel signs, so we explicitly include the Devanagari unicode range
+        words = re.findall(r'[\w\u0900-\u097F]+', text.lower())
         return [w for w in words if len(w) > 2]
 
     def _query(self, collection, query: str, session_id: str, top_k: int) -> list[dict]:
@@ -96,10 +98,15 @@ class RAGEngine:
 
         # 2. Build BM25 Index (Using the improved tokenizer)
         tokenized_corpus = [self._tokenize(doc) for doc in all_docs]
-        bm25 = BM25Okapi(tokenized_corpus)
+        # bm25 = BM25Okapi(tokenized_corpus)
         tokenized_query = self._tokenize(query)
 
-        bm25_scores = bm25.get_scores(tokenized_query)
+        # 🔥 FIX (H1): Prevent ZeroDivisionError if all tokens are empty
+        if not any(tokenized_corpus) or not tokenized_query:
+            bm25_scores = [0.0] * len(all_docs)
+        else:
+            bm25 = BM25Okapi(tokenized_corpus)
+            bm25_scores = bm25.get_scores(tokenized_query)
 
         # 3. Get Vector Search Scores from ChromaDB (Fetch more candidates for better hybrid mix)
         vector_res = collection.query(
