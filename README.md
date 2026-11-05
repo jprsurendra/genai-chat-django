@@ -463,7 +463,10 @@ Each branch builds on the previous one. This section records **what changed in e
 | [`genai-chat-005-db-auth`](README.005.md) | ✅ Done | Migrated to MySQL, implemented JWT Auth, and separated UI from API |
 | [`genai-chat-006-rag-quality`](README.006.md) | ✅ Done | Hybrid Search, Query Rewriting, and Evaluation |
 | [`genai-chat-007-security-hardening`](README.007.md) | ✅ Done | Secure media files, Prompt Injection defense, Redis rate limiting, and Logging |
-| [`genai-chat-008-agent-tools`](README.008.md) | 🚧 In Progress | Implementing Tool Calling (Calculator, Web Search) and bigger models |
+| [`genai-chat-008-agent-tools`](README.008.md) | ✅ Done | Tool Calling (Calculator, Web Search) and a hybrid local/cloud model setup (OpenRouter) |
+| [`genai-chat-009-production-ui`](README.009.md) | ✅ Done | Dark Mode, loading spinner, Redis semantic caching and security fixes from the architecture review |
+| [`genai-chat-010-devops`](README.010.md) | 🚧 In Progress | Celery background indexing, Docker Compose and the remaining review items |
+
 ---
 
 ### 📝 Quick Summaries
@@ -475,7 +478,10 @@ Each branch builds on the previous one. This section records **what changed in e
 - **Branch 005 (DB & Auth):** Migrated to MySQL, added JWT Authentication, separated UI (`web_ui`) from API, added file storage and history management.
 - **Branch 006 (RAG Quality):** Improved retrieval accuracy with Hybrid Search and Query Rewriting.
 - **Branch 007 (Security):** Hardened the system against Prompt Injection, secured media files, added Redis rate limiting, and implemented file-based logging.
-- **Branch 008 (Agent Tools):** Turning the chatbot into an Agent by adding Calculator and Web Search tools.
+- **Branch 008 (Agent Tools):** Turned the chatbot into an Agent with Calculator and Web Search tools, using a bigger cloud model (OpenRouter) for tool calling.
+- **Branch 009 (Production & UI):** Added Dark Mode and a loading spinner, fixed the first production-review issues (Hindi tokenizer, calculator limits, server-side history, fail-closed rate limiter), and added Redis semantic caching.
+- **Branch 010 (DevOps):** Adding Celery background indexing and Docker Compose, and closing the remaining review items.
+
 ---
 
 ### Branching Strategy & Git Workflow
@@ -483,20 +489,13 @@ Each branch builds on the previous one. This section records **what changed in e
 We follow a simple **GitHub Flow**: `main` is always stable, and each feature lives in a short-lived branch that is created from the **latest `main`**. A new branch is created only after the previous one has been merged.
 
 ```text
-### Branching Strategy & Git Workflow
-
-We follow a simple **GitHub Flow**: `main` is always stable, and each feature lives in a short-lived branch that is created from the **latest `main`**. A new branch is created only after the previous one has been merged.
-
-```text
-main ──●──────────────●──────────────────●────────────────●────────────────●────────────────●────────────────●────────────────●──────▶
-        \            / \                / \              / \              / \              / \              / \              /
-         001-basic ─●   002-prompt ───●   003-rag ─────●   004-cleanup ─●   005-db-auth ─●   006-rag-quality ─●   007-security ─● (008-agent-tools)
-        (PR + CI ✅)    (PR + CI ✅)      (PR + CI ✅)    (PR + CI ✅)    (PR + CI ✅)    (PR + CI ✅)    (PR + CI ✅)    🚧 In Progress
-          tag: v0.1.0     tag: v0.2.0        tag: v0.3.0      tag: v0.4.0      tag: v0.5.0      tag: v0.6.0      tag: v0.7.0
-          
+main ●──────●──────●──────●──────●──────●──────●──────●──────●──────●────▶
+      \    / \    / \    / \    / \    / \    / \    / \    / \    / \
+      001    002    003    004    005    006    007    008    009    010 🚧
+      v0.1.0 v0.2.0 v0.3.0 v0.4.0 v0.5.0 v0.6.0 v0.7.0 v0.8.0 v0.9.0
 ```
 
-`001` basic · `002` system-prompt · `003` rag · `004` clean-up · `005` db-auth · `006` rag-quality · `007` security-hardening (in progress)
+`001` basic · `002` system-prompt · `003` rag · `004` clean-up · `005` db-auth · `006` rag-quality · `007` security-hardening · `008` agent-tools · `009` production-ui · `010` devops (in progress)
 Each merged branch gets a PR with passing CI and a version tag.
 
 **Why not stack branches (002 created from 001)?**
@@ -703,7 +702,7 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Updated `RAGEngine` to use BM25 + Vector Hybrid Search.
 - Added `_rewrite_query` to `LLMService`.
 
-### Branch 007: `genai-chat-007-security-hardening` 🚧
+### Branch 007: `genai-chat-007-security-hardening` ✅
 
 **Goal:** Fix critical security vulnerabilities identified in the Enterprise Architecture Review.
 
@@ -715,10 +714,64 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Upgrade Rate Limiting to Redis (per-user, not per-IP).
 - Implement complete data deletion (MySQL + Disk + ChromaDB).
 
-**Changes made so far:**
+**Changes made:**
 - Secure file downloads: added `DownloadDocumentAPIView` (owner check via JWT) and removed the public `/media/` route.
 - Prompt hardening: retrieved text is wrapped in clear boundaries and treated as data only.
-- _Still to do:_ Redis rate limiting and complete data deletion.
+- Redis-backed rate limiting.
+- File-based logging.
+
+### Branch 008: `genai-chat-008-agent-tools` ✅
+
+**Goal:** Turn the chatbot into an agent that can use tools, and pick a model that can handle tool calling on a 16 GB laptop.
+
+📄 **[Click here to read the detailed analysis for Branch 008 (README.008.md)](README.008.md)**
+
+**Scope**
+- Decide on an LLM strategy (local vs cloud) and record the reasoning.
+- Calculator tool.
+- Web search tool.
+- Database query tool: planned for later, not built in this branch.
+
+**Changes made:**
+- Hybrid model setup: local Ollama for simple chat, OpenRouter (`meta-llama/llama-3.3-70b-instruct:free`) for tool calling, with the base URL read from `OPENAI_BASE_URL`.
+- Calculator tool in `chat/utilities/tools.py`, using safe `ast` parsing (fixed the `ast.Num` and `^` problems).
+- Web search tool using the Tavily API.
+- Tool-calling logic in `LLMService`.
+
+### Branch 009: `genai-chat-009-production-ui` ✅
+
+**Goal:** Polish the UI and fix the first high-priority issues from the production architecture review.
+
+📄 **[Click here to read the detailed analysis for Branch 009 (README.009.md)](README.009.md)**
+
+**Scope**
+- Dark Mode and a loading spinner.
+- Fix high-priority review findings.
+- Add a Redis semantic cache.
+
+**Changes made:**
+- Dark Mode (CSS variables and `localStorage`) and a Bootstrap loading spinner.
+- H1: Hindi-aware BM25 tokenizer, with a guard against empty token lists.
+- H2: limits on the calculator's base and exponent.
+- H3: missing packages added to `requirements.txt`.
+- H6: chat history is loaded from MySQL on the server, not trusted from the client.
+- H9: the rate limiter now fails closed when Redis is unavailable.
+- H4 (partly): web search results are wrapped as untrusted data, and results with obvious injection phrases are skipped.
+- M2: Redis semantic cache for repeated or very similar questions.
+
+### Branch 010: `genai-chat-010-devops` 🚧
+
+**Goal:** Make the app easy to run and deploy, and keep the UI responsive during heavy work.
+
+📄 **[Click here to read the detailed analysis for Branch 010 (README.010.md)](README.010.md)**
+
+**Scope**
+- Celery background indexing for document uploads.
+- Docker Compose for the whole stack.
+- Cache fixes: clear the cache on "Clear All" and on upload, and do not cache time-sensitive answers.
+- Remaining review items: the rest of H4, H5, H7, H8, M1, M3, M4 and M5.
+
+**Changes made:** _to be filled in as the branch progresses._
 
 ---
 

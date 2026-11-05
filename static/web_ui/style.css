@@ -1,11 +1,53 @@
+/* ==========================================
+   DARK MODE VARIABLES & THEME CONFIGURATION
+   ========================================== */
+:root {
+  --bg-color: #f8f9fa;
+  --text-color: #212529;
+  --bubble-assistant: #f1f3f5;
+  --bubble-assistant-text: #212529;
+  --chat-box-bg: #ffffff;
+  --sidebar-bg: #212529;
+  --nav-bg: #212529;
+}
+
+/* When body has class 'dark-mode', these variables override the default ones */
+body.dark-mode {
+  --bg-color: #121212;
+  --text-color: #e0e0e0;
+  --bubble-assistant: #2d2d2d;
+  --bubble-assistant-text: #e0e0e0;
+  --chat-box-bg: #1e1e1e;
+  --sidebar-bg: #000000;
+  --nav-bg: #000000;
+}
+
+/* Apply global background and text colors */
+body {
+  background-color: var(--bg-color) !important;
+  color: var(--text-color);
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* Navbar and Sidebar Dark Mode overrides */
+body.dark-mode nav.bg-dark {
+  background-color: var(--nav-bg) !important;
+}
+
+body.dark-mode .bg-dark {
+  background-color: var(--sidebar-bg) !important;
+}
+
+/* Chat Box background */
 .chat-box {
-  background: #fff;
+  background: var(--chat-box-bg) !important;
   border-radius: 12px;
   padding: 1rem;
   min-height: 60vh;
   max-height: 65vh;
   overflow-y: auto;
   box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  transition: background-color 0.3s;
 }
 
 .msg {
@@ -30,9 +72,10 @@
   border-bottom-right-radius: 4px;
 }
 
+/* Assistant bubble respects Dark Mode variables */
 .msg.assistant .bubble {
-  background: #f1f3f5;
-  color: #212529;
+  background: var(--bubble-assistant) !important;
+  color: var(--bubble-assistant-text) !important;
   border-bottom-left-radius: 4px;
 }
 
@@ -68,10 +111,38 @@
   overflow-y: auto;
 }
 
+/* Dark Mode Form Inputs */
+body.dark-mode .form-control {
+  background-color: #2d2d2d;
+  color: #fff;
+  border-color: #444;
+}
+body.dark-mode .form-control::placeholder {
+  color: #aaa;
+}
+
+/* Dark Mode for History List Items */
+body.dark-mode .list-group-item {
+  background-color: #121212 !important;
+  color: #e0e0e0 !important;
+  border-color: #333 !important;
+}
+body.dark-mode .list-group-item:hover {
+  background-color: #2d2d2d !important;
+}
+body.dark-mode .list-group-item.active {
+  background-color: #0d6efd !important;
+  border-color: #0d6efd !important;
+}
+
+/* Scrollbar styles */
 #chatBox::-webkit-scrollbar { width: 8px; }
 #chatBox::-webkit-scrollbar-thumb {
   background: #ced4da;
   border-radius: 4px;
+}
+body.dark-mode #chatBox::-webkit-scrollbar-thumb {
+  background: #555;
 }
 
 .msg.assistant .bubble.error {

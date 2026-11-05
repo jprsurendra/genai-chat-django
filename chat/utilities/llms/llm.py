@@ -200,6 +200,15 @@ class LLMService:
         logger.info(f"▶️ [STREAM START] User: {user_message}, Session: {session_id}")
 
         try:
+            # 🔥 NEW: 1. Check Semantic Cache FIRST
+            cached_answer = self.rag_engine.check_cache(user_message, session_id)
+            if cached_answer:
+                # Stream the cached answer character by character (to mimic real streaming)
+                for char in cached_answer:
+                    yield char
+                logger.info("🏁 [STREAM END] Served from Cache.")
+                return
+
             # 🔥 NEW: Rewrite the query based on history to make it standalone
             search_query = await self._rewrite_query(user_message, history)
 
@@ -347,7 +356,13 @@ class LLMService:
 
                 # 5. Stream the final answer (yielding it as a single string to avoid SSE parsing issues)
                 if final_answer:
+                    # 🔥 NEW: Save the tool-generated answer to cache
+                    self.rag_engine.save_to_cache(user_message, final_answer, session_id)
                     yield final_answer
+
+            # 🔥 NEW: Save to Cache if we got a full reply (for non-tool answers)
+            if full_reply:
+                self.rag_engine.save_to_cache(user_message, full_reply, session_id)
 
             logger.info(f"🏁 [STREAM END] Total generated: {len(full_reply)} chars.")
 

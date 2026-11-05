@@ -180,6 +180,10 @@ class ChatStreamAPIView(ChatAPIView):
             title = req.message[:30] + "..." if len(req.message) > 30 else req.message
             session = ChatSession.objects.create(user=request.user, title=title)
 
+        # 🔥 SECURITY FIX (H6): Load history from DB instead of trusting the client
+        db_history = ChatMessage.objects.filter(session=session, is_deleted=False).order_by('created_at')
+        history_list = [ChatMessage(role=m.role, content=m.content) for m in db_history]
+
         # Save User Message
         ChatMessage.objects.create(session=session, role="user", content=req.message)
 
@@ -191,8 +195,10 @@ class ChatStreamAPIView(ChatAPIView):
                 # Send the new session ID to the frontend immediately
                 yield f"data: {json.dumps({'session_id': session.id})}\n\n"
 
+                # 🔥 FIX (H6): Pass the DB history to the service, NOT req.history
+                # in old code  arguments: req.message, req.history (new : history_list), str(user_id), req.use_fast
                 async for delta in service.stream_reply(
-                        req.message, req.history, str(user_id), req.use_fast
+                        req.message, history_list, str(user_id), req.use_fast
                 ):
                     full_reply += delta
                     # Note: Do NOT use .encode() here. Return a string.

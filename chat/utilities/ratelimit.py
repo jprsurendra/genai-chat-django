@@ -53,8 +53,10 @@ def check_rate_limit(ip: str, scope: str = "chat", limit: int = None) -> None:
     key = f"ratelimit:{scope}:{ip}"
 
     # If Redis is unavailable, fallback to allowing the request (fail open)
+    # 🔥 SECURITY FIX (H9): Fail-Closed by default
     if redis_client is None:
-        return
+        logger.error("Redis is down. Rate limiter is failing closed (blocking requests).")
+        raise PermissionDenied("Service temporarily unavailable. Please try again later.")
 
     try:
         # Use a Redis Pipeline for atomic operations
@@ -82,9 +84,9 @@ def check_rate_limit(ip: str, scope: str = "chat", limit: int = None) -> None:
             raise PermissionDenied(f"Rate limit exceeded: max {limit} req / {window}s.")
 
     except redis.RedisError as e:
-        # If Redis fails during execution, log and allow (fail open)
+        # If Redis fails during execution, block the request (Fail-Closed)
         logger.error(f"Redis rate limit error: {e}")
-        return
+        raise PermissionDenied("Service temporarily unavailable. Please try again later.")
 
 
 def reset_rate_limits() -> None:

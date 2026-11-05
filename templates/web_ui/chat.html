@@ -11,20 +11,33 @@
 </head>
 <body class="bg-light">
 
+<!-- ========================================== -->
+<!-- NAVBAR (Model selector, Dark mode, etc.)   -->
+<!-- ========================================== -->
 <nav class="navbar navbar-dark bg-dark">
   <div class="container-fluid">
     <span class="navbar-brand mb-0 h1">
       <i class="bi bi-robot"></i> GenAI Chat
     </span>
     <div class="d-flex gap-2 align-items-center">
+      <!-- Display Logged-in Username -->
       <span class="text-light me-2" id="navUsername"></span>
+
       <select id="modelSelect" class="form-select form-select-sm" style="width: auto;">
         <option value="fast" selected>qwen2.5:1.5b (fast)</option>
         <option value="main">llama3.2:1b (main)</option>
       </select>
+
+      <!-- 🔥 Dark Mode Toggle Button -->
+      <button id="themeToggle" class="btn btn-outline-light btn-sm" title="Toggle Dark Mode">
+        <i class="bi bi-moon-stars"></i>
+      </button>
+
       <button id="clearBtn" class="btn btn-outline-light btn-sm">
         <i class="bi bi-trash"></i> Clear
       </button>
+
+      <!-- Logout Button -->
       <button id="logoutBtn" class="btn btn-danger btn-sm">
         <i class="bi bi-box-arrow-right"></i> Logout
       </button>
@@ -32,7 +45,9 @@
   </div>
 </nav>
 
-<!-- Main Layout with Sidebar -->
+<!-- ========================================== -->
+<!-- MAIN LAYOUT (Sidebar + Chat Area)          -->
+<!-- ========================================== -->
 <div class="d-flex" style="height: calc(100vh - 56px);">
 
     <!-- Sidebar for History -->
@@ -48,6 +63,7 @@
 
     <!-- Main Chat Area -->
     <div class="container flex-grow-1 d-flex flex-column" style="max-width: 860px; overflow-y: auto;">
+        <!-- Chat Box (Messages will be inserted here) -->
         <div id="chatBox" class="chat-box mb-3 flex-grow-1">
             <div class="welcome text-center text-muted py-5">
                 <i class="bi bi-chat-dots display-4"></i>
@@ -55,6 +71,7 @@
             </div>
         </div>
 
+        <!-- Chat Input Form -->
         <form id="chatForm" class="input-group mb-4">
             <button class="btn btn-secondary" type="button" id="uploadBtn"
                     title="Upload a PDF or TXT document" aria-label="Upload document">
@@ -71,10 +88,12 @@
             </button>
         </form>
 
+        <!-- Hidden File Input -->
         <input type="file" id="fileUpload" accept=".pdf,.txt" hidden />
     </div>
 </div>
 
+<!-- External Libraries & App Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 <script src="{% static 'web_ui/app.js' %}"></script>
