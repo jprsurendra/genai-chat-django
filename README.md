@@ -465,8 +465,28 @@ Each branch builds on the previous one. This section records **what changed in e
 | [`genai-chat-007-security-hardening`](README.007.md) | ✅ Done | Secure media files, Prompt Injection defense, Redis rate limiting, and Logging |
 | [`genai-chat-008-agent-tools`](README.008.md) | ✅ Done | Tool Calling (Calculator, Web Search) and a hybrid local/cloud model setup (OpenRouter) |
 | [`genai-chat-009-production-ui`](README.009.md) | ✅ Done | Dark Mode, loading spinner, Redis semantic caching and security fixes from the architecture review |
-| [`genai-chat-010-devops`](README.010.md) | 🚧 In Progress | Celery background indexing, Docker Compose and the remaining review items |
+| [`genai-chat-010-devops`](README.010.md) | 🚧 In Progress | Celery background indexing, Docker Compose and the remaining review items (Docker Compose, Celery, and remaining security fixes (H3, H4, H9)) |
 
+---
+
+## 13. Branch History
+
+Each branch builds on the previous one. This section records **what changed in each branch and why**, so the project history stays easy to follow.
+
+| Branch | Status | Summary |
+|--------|--------|---------|
+| [`genai-chat-001-basic`](README.001.md) | ✅ Done | Basic streaming chatbot (Django + DRF + Ollama) |
+| [`genai-chat-002-system-prompt`](README.002.md) | ✅ Done | Improved system prompt and fixed identity confusion |
+| [`genai-chat-003-rag`](README.003.md) | ✅ Done | Implemented Embeddings, ChromaDB, PDF upload, and Chat Memory (RAG) |
+| [`genai-chat-004-clean-up`](README.004.md) | ✅ Done | Fixed architecture bugs, added Session ID isolation, and Show Sources (Citations) |
+| [`genai-chat-005-db-auth`](README.005.md) | ✅ Done | Migrated to MySQL, implemented JWT Auth, and separated UI from API |
+| [`genai-chat-006-rag-quality`](README.006.md) | ✅ Done | Hybrid Search, Query Rewriting, and Evaluation |
+| [`genai-chat-007-security-hardening`](README.007.md) | ✅ Done | Secure media files, Prompt Injection defense, Redis rate limiting, and Logging |
+| [`genai-chat-008-agent-tools`](README.008.md) | ✅ Done | Implemented Tool Calling (Calculator, Web Search) and bigger models |
+| [`genai-chat-009-production-ui`](README.009.md) | ✅ Done | Fixed H1, H2, H6, added Semantic Caching, and UI Polish |
+| [`genai-chat-010-devops`](README.010.md) | 🚧 In Progress | Docker Compose, Celery, and remaining security fixes (H3, H4, H9) |
+| `011-advanced-ai` | Token budget, Reranker, Tool protocol fixes | ⏳ Upcoming |
+| `012-voice-ui` | Voice, vision, Hindi UI | 💭 Future (optional) |
 ---
 
 ### 📝 Quick Summaries
@@ -475,13 +495,12 @@ Each branch builds on the previous one. This section records **what changed in e
 - **Branch 002 (Prompt):** Investigated AI hallucinations and improved the System Prompt.
 - **Branch 003 (RAG):** Implemented ChromaDB, Embeddings, PDF Uploads, and AI Memory.
 - **Branch 004 (Clean-up):** Fixed architectural bugs, added user Session Isolation, and implemented "Show Sources".
-- **Branch 005 (DB & Auth):** Migrated to MySQL, added JWT Authentication, separated UI (`web_ui`) from API, added file storage and history management.
+- **Branch 005 (DB & Auth):** Migrated to MySQL, added JWT Authentication, separated UI (`web_ui`) from API.
 - **Branch 006 (RAG Quality):** Improved retrieval accuracy with Hybrid Search and Query Rewriting.
-- **Branch 007 (Security):** Hardened the system against Prompt Injection, secured media files, added Redis rate limiting, and implemented file-based logging.
-- **Branch 008 (Agent Tools):** Turned the chatbot into an Agent with Calculator and Web Search tools, using a bigger cloud model (OpenRouter) for tool calling.
-- **Branch 009 (Production & UI):** Added Dark Mode and a loading spinner, fixed the first production-review issues (Hindi tokenizer, calculator limits, server-side history, fail-closed rate limiter), and added Redis semantic caching.
-- **Branch 010 (DevOps):** Adding Celery background indexing and Docker Compose, and closing the remaining review items.
-
+- **Branch 007 (Security):** Hardened the system against Prompt Injection, secured media files, and added Redis rate limiting.
+- **Branch 008 (Agent Tools):** Turning the chatbot into an Agent by adding Calculator and Web Search tools.
+- **Branch 009 (Production & UI):** Fixed critical bugs (H1, H2, H6), added Dark Mode, and implemented Semantic Caching.
+- **Branch 010 (DevOps):** Added Docker Compose for deployment, Celery for background tasks, and fixed remaining security issues.
 ---
 
 ### Branching Strategy & Git Workflow
