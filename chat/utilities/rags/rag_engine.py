@@ -349,12 +349,15 @@ class RAGEngine:
 
         try:
             query_vec = self._get_query_embedding(query)
+            # 🔥 FIX: Convert numpy array to a standard Python list for JSON serialization
+            query_vec_list = [float(x) for x in query_vec]
+
             cache_key = f"cache:semantic:{session_id}"
             ttl = getattr(settings, "CACHE_TTL", 86400)
 
             # Store as a JSON string
             cache_data = json.dumps({
-                "embedding": query_vec,
+                "embedding": query_vec_list,
                 "answer": answer
             })
 
