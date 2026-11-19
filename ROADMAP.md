@@ -1,8 +1,10 @@
 # GenAI Chat: Roadmap
 
-This document tracks what has been built so far and what is planned next. The project started as a small streaming chatbot and has grown into a multi-user app with login, a database, RAG and file upload. Each step lives in its own branch (see [Branch History](README.md#13-branch-history) in the main README for the Git workflow).
+This document tracks what has been built so far and what is planned next. The project started as a small streaming chatbot and has grown into a multi-user app with login, a database, hybrid RAG, file upload, tool calling and a semantic cache. Each step lives in its own branch (see [Branch History](README.md#13-branch-history) in the main README for the Git workflow).
 
 > The plan below is a working plan, not a promise. Branches may be reordered or split as we learn what actually matters.
+
+_Last updated: 2026-11-19, after the code review of branch `010-devops` (see "Review findings" below)._
 
 ---
 
@@ -16,142 +18,301 @@ This document tracks what has been built so far and what is planned next. The pr
 | `004-clean-up` | Session isolation, show sources | ✅ Done |
 | `005-db-auth` | MySQL, JWT login, file storage | ✅ Done |
 | `006-rag-quality` | Hybrid search, query rewriting, evaluation (reranking carried over) | ✅ Done |
-| `007-security-hardening` | Secure media access, prompt injection defense, Redis rate limiting, complete data erasure | 🚧 In progress |
-| `008-agent-tools` | Function calling, bigger models | ⏭️ Next up |
-| `009-production` | Redis caching, Celery, Docker, observability | ⏳ Upcoming |
-| `010-voice-ui` | Voice, vision, Hindi UI | 💭 Future (optional) |
+| `007-security-hardening` | Owner-checked downloads, prompt injection defense, Redis rate limiting, complete data erasure | ✅ Done |
+| `008-agent-tools` | Function calling: calculator + web search (Tavily), OpenRouter support | ✅ Done (single tool round; see H5) |
+| `009-production-ui` | Production UI, dark mode, semantic cache (Redis), review fixes H1/H2/H3/H6/H9 | ✅ Done |
+| `010-devops` | Critical bug fixes, Docker Compose, Celery, first tests | 🚧 In progress |
+| `011-tool-registry` | Tool registry, multi-round tool loop, streamed tool answers | ⏭️ Next up |
+| `012-mcp-client` | Connect external MCP servers (web search, read-only DB, drive) | ⏳ Upcoming |
+| `013-multi-agent` | Supervisor + specialist agents, critic, memory agent, token budget | ⏳ Upcoming |
+| `014-mcp-server` | Expose our RAG as an MCP server (Claude Desktop, IDEs) | ⏳ Upcoming |
+| `015-eval-observability` | Larger eval set, CI evals, Langfuse tracing, feedback | ⏳ Upcoming |
+| `016-voice-ui` | Voice, vision, Hindi UI | 💭 Future (optional) |
+
+> **Renumbering note:** the old plan had `009-production` and `010-voice-ui`. Production work was split between `009-production-ui` and `010-devops`, and voice/vision moves to `016`.
 
 ---
 
 ## Where we are now
 
-The app now has login, chat history in MySQL, document upload and an **improved RAG engine**:
+The app has login, chat history in MySQL, document upload, a hybrid RAG engine (vector + BM25, Hindi-aware tokenizer), query rewriting, a Redis rate limiter that fails closed, a Redis semantic cache, and two tools (calculator and Tavily web search).
 
-- **Hybrid search** (vector + BM25 keyword search) is implemented.
-- **Query rewriting** turns follow-up questions (such as *"उसका दाम क्या है?"*) into complete questions before searching.
-- `evaluate_rag.py` measures retrieval, but so far with only a handful of questions, so treat its score as a rough signal, not a guarantee.
-- **Reranking** is not done yet and is carried over (see Branch 006 below).
+**Current task:** Branch 010. The code review found that some items described in `README.010.md` are **not in the code yet**: there is no `Dockerfile`, no `docker-compose.yml`, no Celery worker, and the `tests.py` files are empty. The review also found several bugs that must be fixed before deployment (see Branch 010 below).
 
-Branch 006 is merged into `main`.
-
-**Current task:** Branch 007. The Enterprise Architecture Review found security problems that must be fixed before the app gets more powerful. Secure file downloads and prompt hardening are done; Redis rate limiting and complete data erasure are still open. After that comes the agent work (Branch 008).
+After Branch 010, the work moves from "chatbot with tools" to **agents**: a proper tool registry (011), MCP (012), multi-agent orchestration (013), our own MCP server (014), and measurement (015).
 
 ---
 
-## ✅ Branch 006: `genai-chat-006-rag-quality` (done, merged)
+## 🔍 Review findings (status tracker)
 
-**Goal:** make retrieval accurate, so the AI answers from the right context and stops guessing.
+IDs H1 to M6 come from the Production Architecture Review in `README.009.md`. IDs R1 onwards are new findings from the 2026-11-19 code review.
 
-- **Hybrid search:** ✅ implemented (vector search combined with BM25 keyword search).
-- **Query rewriting:** ✅ implemented. A follow-up question is rewritten into a complete question using the earlier conversation, and only then searched.
-- **Evaluation:** ✅ `evaluate_rag.py` built (5 test cases so far).
-- **Reranking:** ⏳ not done. Carried over (see below).
-
-**Carried over from this branch**
-
-- Grow the evaluation set to 20 to 30 questions, including *negative* questions the document cannot answer (the app should return nothing relevant for them), and report Hit@1, Hit@3 and MRR instead of a single percentage.
-- Add reranking with a cross-encoder model, and keep it only if the evaluation score improves.
-
----
-
-## 🛡️ Branch 007: `genai-chat-007-security-hardening` (in progress)
-
-**Goal:** fix the critical security vulnerabilities found in the Enterprise Architecture Review. The review's point was clear: secure the foundation *before* adding agent tools. A database-query tool added on top of the current setup could become a path for data leaks.
-
-- **Secure media files:** ✅ done. The public `/media/` route is removed and uploads are served through an authenticated download API that checks the file's owner.
-- **Prompt injection defense:** ✅ done. The system prompt treats retrieved text as data only, and the memory feature stores only factual statements.
-- **Redis rate limiting:** ⏳ to do. Replace the in-memory, per-IP limiter with a Redis-backed one: per user for chat and upload, per IP for login and register.
-- **Data erasure:** ⏳ to do. "Clear All" must delete from MySQL, from disk and from ChromaDB.
-
-> Redis is introduced here for rate limiting. Branch 009 reuses it for caching.
-
----
-
-## 🚀 Branch 008: `genai-chat-008-agent-tools` (next)
-
-**Goal:** turn the chatbot into an agent that can do things, not only answer.
-
-- **Tool calling (function calling):** give the AI tools such as:
-  - **Web search** for fresh information from the internet.
-  - **Calculator** for maths questions (the classic `2+2`).
-  - **Database query** against MySQL (for example "how many users registered today?").
-- **Multi-step reasoning:** the AI decides which tool to use and when.
-- **Bigger LLMs:** small models (1.5B) are weak at tool calling, so this branch moves to a larger model, either OpenAI (GPT-4o) or a hosted Llama 3 70B.
-
-> ⚠️ This is the first time the app may depend on something that is not fully local. The `LLM_PROVIDER` setting already allows switching between Ollama and OpenAI, so the plan is to keep local Ollama as the default and make the larger model an option.
+| ID | Severity | Finding | Status / Branch |
+|----|----------|---------|-----------------|
+| H1 | High | BM25 blind to Hindi, could crash | ✅ Fixed (009) |
+| H2 | High | Calculator exponent DoS | ✅ Fixed (009) |
+| H3 | High | Missing `rank-bm25` / MySQL driver | ✅ Fixed (009) |
+| H4 | High | Web search: prompt injection + private data sent to Tavily; sync client in async path | 🟡 Partly fixed → finish in 012 (MCP + redaction) |
+| H5 | High | Tool-call protocol incomplete (one round, missing `type`, unguarded `json.loads`) | ⏳ 011 |
+| H6 | High | Chat history trusted from client | 🟡 Fixed in streaming view only; non-stream `ChatAPIView` still uses `req.history` → 010 |
+| H7 | High | No token accounting or daily quota | ⏳ 013 |
+| H8 | High | Real user text written to INFO logs | ⏳ 010 |
+| H9 | Medium | Rate limiter fail-open | ✅ Fixed (009) |
+| M1 | Medium | No reranker | ⏳ 013 |
+| M2 | Medium | No cache | 🟡 Semantic cache done; its risks (R6) → 011 / 013 |
+| M3 | Medium | BM25 rebuilt per query; >1000 chunks silently ignored | ⏳ 013 |
+| M4 | Medium | `chunk_count` always about 1 | ⏳ 010 |
+| M5 | Medium | `SIMPLE_JWT`, `SECURE_*` headers, password validators | ⏳ 010 |
+| M6 | Medium | No Docker, CI or tests | ⏳ 010 (Docker, tests), 015 (CI evals) |
+| R1 | Critical | Real API keys inside the shared `.env` in the project zip | ⏳ 010: rotate keys, package with `git archive` |
+| R2 | High | `DownloadDocumentAPIView` has no URL route, so downloads return 404 | ⏳ 010 |
+| R3 | High | No JWT refresh in the frontend; users are logged out when the access token expires | ⏳ 010 |
+| R4 | Medium | Filename inserted into `innerHTML` without escaping (`app.js`) | ⏳ 010 |
+| R5 | Medium | Same file can be uploaded many times (no hash dedup) | ⏳ 010 |
+| R6 | Medium | Semantic cache ignores conversation context, caches web-search answers for 24h, is not invalidated on upload, and scans all entries (O(n)) | ⏳ 011 (tool answers, invalidation), 013 (key on standalone query) |
+| R7 | Medium | Documents and memories are user-wide, so a PDF uploaded in chat A appears in chat B | ⏳ 013 |
+| R8 | Medium | Memory stores every non-question message ("ok", "thanks") | ⏳ 013 (memory agent) |
+| R9 | Medium | Hybrid score uses arbitrary `bm25/5.0` normalization and a hardcoded `0.35` threshold | ⏳ 013 (Reciprocal Rank Fusion) |
+| R10 | Medium | Sync RAG / embedding / Tavily calls block the async event loop | ⏳ 011 (`asyncio.to_thread`) |
+| R11 | Low | No rate limit on login/register | ⏳ 010 |
+| R12 | Low | Housekeeping: stray `=0.3.0` file, duplicate `redis` in `requirements.txt`, unused `pydantic-settings`, repeated `extra_headers` | ⏳ 010 |
 
 ---
 
-## ⚡ Branch 009: `genai-chat-009-production` (upcoming)
+## ✅ Branch 007: `genai-chat-007-security-hardening` (done)
 
-**Goal:** get the app ready for real users: scalable and safer.
+- **Secure media files:** ✅ the public `/media/` route is removed (only served when `DEBUG`), and a download API checks the file's owner. ⚠️ Its URL route is missing (R2), fixed in 010.
+- **Prompt injection defense:** ✅ retrieved text is treated as data only.
+- **Redis rate limiting:** ✅ per user for chat, upload and clear, and fails closed. Login/register limits move to 010 (R11).
+- **Data erasure:** ✅ "Clear All" deletes from MySQL, disk and ChromaDB.
 
-- **Redis caching:** cache answers to frequently asked questions, so there are fewer LLM calls and responses are faster.
-- **Background indexing (Celery):** process large PDF uploads in the background, so the UI does not freeze.
-- **Docker Compose:** run the whole stack (Django, MySQL, Redis, Ollama) with one command.
-- **Observability:** logs and tracing (for example Langfuse), so we can see how the AI is actually performing.
-- **UI/UX polish:** dark mode, loading spinners and clearer error messages.
+## ✅ Branch 008: `genai-chat-008-agent-tools` (done)
+
+- **Calculator** and **web search (Tavily)** tools with function calling.
+- OpenRouter support through `OPENAI_BASE_URL`.
+- Limits carried forward: only one tool round, the final answer after a tool call is not streamed, and tools exist only in the streaming path (H5, fixed in 011). The **database query** tool was not built; it moves to 012 as a read-only MCP server.
+
+## ✅ Branch 009: `genai-chat-009-production-ui` (done)
+
+- Production UI with dark mode, chat sidebar, rename/delete chats.
+- Redis **semantic cache**.
+- Review fixes H1, H2, H3, H6 (streaming path), H9.
 
 ---
 
-## 💬 Branch 010: `genai-chat-010-voice-ui` (future, optional)
+## 🚧 Branch 010: `genai-chat-010-devops` (in progress)
 
-**Goal:** go beyond text.
+**Goal:** fix what is broken today and make the app deployable with one command.
 
-- **Voice input and output:** ask questions by speaking and listen to the answers, using the browser's Speech API.
-- **Vision (image upload):** upload an image and ask about it (for example "what is in this photo?").
-- **Hindi UI:** translate the whole interface into Hindi.
+**Scope**
+
+- **R1:** rotate the OpenRouter and Tavily keys; add a packaging script that uses `git archive`, so `.env`, `db.sqlite3`, `media/`, `logs/`, `.idea/` and `chroma_db/` never leave the machine.
+- **R2:** add `path("download/<int:document_id>", DownloadDocumentAPIView.as_view())` to `chat/urls.py`.
+- **R3 + M5:** add `SIMPLE_JWT` settings (for example 30 min access, 7 days refresh), a `TokenRefreshView` route, and refresh-then-retry on 401 in `fetchWithAuth`; add `SECURE_*` headers and `AUTH_PASSWORD_VALIDATORS`; call `validate_password()` on register.
+- **H6:** the non-stream `ChatAPIView` loads history from the DB; remove `history` from `ChatRequest`.
+- **H8:** remove user text from INFO logs (structured logs without personal data).
+- **M4:** `process_and_store_file` returns `(message, chunk_count)`.
+- **R4:** escape `filename` in `renderDocumentBubble`.
+- **R5:** add `UploadedDocument.file_hash` (SHA-256, unique per user) and reject duplicates.
+- **R11:** per-IP rate limit on login and register.
+- **R12:** remove `=0.3.0`, clean and pin `requirements.txt`.
+- **M6:** `Dockerfile` + `docker-compose.yml` (Django on uvicorn, MySQL, Redis, Ollama); Celery worker for PDF ingestion with a "Processing…" status; first tests with `pytest-django`.
+
+**Acceptance criteria**
+
+- The download button returns the file, not 404.
+- A user stays logged in after 30+ minutes of idle time.
+- Uploading the same PDF twice says "already uploaded".
+- `docker compose up` starts the whole stack.
+- `pytest` passes: download ownership, login rate limit, duplicate upload, history comes from the DB.
+
+---
+
+## ⏭️ Branch 011: `genai-chat-011-tool-registry` (next)
+
+**Goal:** replace the single-round, `if/elif` tool code with an extensible registry. This is the base for MCP and agents.
+
+**Scope**
+
+- `chat/tools/registry.py`: `Tool` dataclass (name, description, JSON schema, async handler, `requires_approval`, timeout) and a `ToolRegistry` with safe `execute()` (bad JSON, unknown tool, timeout, output size cap).
+- Move `calculate` and `web_search` to `chat/tools/local/` and register them.
+- `chat/agents/base.py`: a bounded multi-round tool loop (`max_iterations=5`) with correct `{"type": "function"}` assistant messages (**H5**).
+- Stream the final answer after tool calls too; new SSE events `tool_start` / `tool_end`, with a "🔍 Searching…" chip in the UI.
+- Use tools in the non-stream path as well, through the same loop.
+- Wrap sync RAG, embedding and Tavily calls in `asyncio.to_thread` (**R10**).
+- `ToolCallLog` model (user, tool, status, duration).
+- Semantic cache (**R6**, part 1): do not cache web-search answers; invalidate the user's cache on upload.
+
+**Acceptance criteria**
+
+- "What is the weather in Delhi, and what is 25 × 17?" runs **both** tools in one turn.
+- Malformed tool JSON or an unknown tool never crashes the stream.
+- Adding a new local tool needs one file and one `register()` call, with no change to `llm.py`.
+
+**Tests:** unknown tool, bad JSON, timeout, multi-round loop (mocked LLM), max-iterations stop.
+
+---
+
+## ⏳ Branch 012: `genai-chat-012-mcp-client`
+
+**Goal:** discover and use tools from external **MCP (Model Context Protocol)** servers at runtime, configured instead of coded.
+
+**Scope**
+
+- Add the `mcp` Python SDK (pinned version).
+- `config/mcp_servers.yaml`: list of servers (transport `stdio` or `streamable-http`, URL or command, headers from env vars, tool allowlist).
+- `chat/tools/mcp/adapter.py`: convert MCP tool schemas to OpenAI function schemas and register them as namespaced tools (`server__tool`); wrap their output as untrusted data.
+- `chat/tools/mcp/client_manager.py`: long-lived MCP sessions started at ASGI lifespan, with reconnect and backoff; MCP status in `/api/health`.
+- Replace the local Tavily tool with a web-search MCP server (keep the local one as fallback); redact personal data from outgoing queries (**H4**).
+- **Database query tool** (from the old Branch 008 plan) as a **read-only** MySQL MCP server, using a `genai_readonly` user that can only `SELECT` from chosen views.
+- Basic `requires_approval` handling (refuse for now; the UI arrives in 013).
+
+**Acceptance criteria**
+
+- Adding a server to the YAML and restarting makes its tools available, with no Python change.
+- If one MCP server is down, the app and the other tools keep working.
+- `DELETE` / `UPDATE` through the DB tool fail.
+
+**Candidate MCP servers:** web search and fetch, read-only MySQL/Postgres, filesystem (bulk ingestion), Google Drive / Notion / Confluence (company docs into RAG), GitHub (code Q&A), Slack / email (only with human approval).
+
+**MCP security rules**
+
+- Per-user tool allowlist.
+- Human approval for any tool with side effects.
+- Timeout, output size cap and audit log on every call.
+- MCP output is always untrusted data in the `tool` role, never in the system prompt.
+- Third-party servers run in containers.
+
+---
+
+## ⏳ Branch 013: `genai-chat-013-multi-agent`
+
+**Goal:** a supervisor routes each request to a specialist agent, and a critic checks the answer.
+
+```
+User ─► Supervisor / Router (fast model: intent + standalone query)
+          ├─► RAG Agent        (hybrid retrieve + rerank + citations)
+          ├─► Research Agent   (web MCP, fetch, sources; parallel searches)
+          ├─► SQL Agent        (read-only DB MCP, SELECT only)
+          ├─► Math/Tool Agent
+          └─► Chat Agent
+                 ▼
+          Critic / Verifier (groundedness + citations) ─► Answer
+                 ▼
+          Memory Agent (Celery, after the turn: extract facts only)
+```
+
+**Scope**
+
+- Agents: `supervisor`, `rag_agent`, `research_agent`, `sql_agent`, `chat_agent`, `critic`; shared `AgentState` (pydantic).
+- Start with a custom router; move to **LangGraph** in this branch if approvals, checkpoints or parallel fan-out are needed. (Alternatives considered: Pydantic AI, OpenAI Agents SDK.)
+- Separate models per role: `ROUTER_MODEL`, `AGENT_MODEL`, `CRITIC_MODEL`, with a LiteLLM fallback chain. Small 1B models are not reliable here; the supervisor needs a tool-capable 7–8B model or a cloud model.
+- **RAG upgrades:** Reciprocal Rank Fusion (**R9**), cached BM25 index (**M3**), cross-encoder reranker kept only if eval improves (**M1**), `chat_session_id` metadata with a "this chat only" filter (**R7**).
+- **Memory agent** replaces "store every statement" (**R8**).
+- Semantic cache keyed on the router's standalone query + route (**R6**, part 2).
+- **Token budget and daily quota** per user (**H7**); `AgentRun` model (route, agents, tokens, cost, latency).
+- UI: steps timeline (`route`, `agent_start` events), clickable citations, Approve/Reject card for `requires_approval` tools.
+
+**Acceptance criteria**
+
+- Routing accuracy ≥ 90% on a 20-query fixture.
+- Document answers include citations; if the answer is not in the documents, the app says so instead of guessing.
+- "Compare the policy in my PDF with today's RBI guideline" runs the RAG and Research agents together.
+- With the filter on, a PDF from chat A does not appear in chat B.
+
+---
+
+## ⏳ Branch 014: `genai-chat-014-mcp-server`
+
+**Goal:** expose our RAG as an MCP server, so Claude Desktop, Cursor, IntelliJ and other MCP clients can search a user's documents.
+
+**Scope**
+
+- `mcp_server/server.py` (FastMCP) with tools `search_documents`, `list_documents`, `get_chat_history`, `ask_with_rag`; resources `doc://{doc_id}`; prompts `summarize_document`, `qa_with_citations`.
+- Transports: `stdio` for local IDEs, `streamable-http` for remote use behind Nginx.
+- Auth: per-user API keys for the PoC (`UserAPIKey`, hashed, revocable); OAuth 2.1 for production.
+- Audit log and per-key rate limit (reusing the Redis limiter); README config examples for Claude Desktop and IntelliJ.
+
+**Acceptance criteria:** correct chunks and page numbers from Claude Desktop; one user's key never returns another user's data; a revoked key stops working at once.
+
+---
+
+## ⏳ Branch 015: `genai-chat-015-eval-observability`
+
+**Goal:** prove every change with data.
+
+**Scope**
+
+- Grow the eval set to 30+ cases: document QA, negative cases (no answer in the document), routing, tool use, mixed Hindi and English.
+- Metrics:
+  - Retrieval: Hit@1, Hit@3, MRR.
+  - Answers: faithfulness and answer relevancy (RAGAS or DeepEval).
+  - Agents: routing accuracy, tool success rate.
+- `python manage.py run_evals` in GitHub Actions on PRs to `main`; fail if a score drops more than 5%.
+- Tracing with Langfuse (self-hosted) or OpenTelemetry: route → agent → tool → LLM spans, tokens and cost.
+- 👍 / 👎 feedback (`MessageFeedback`); thumbs-down answers feed the eval set.
+- Admin view: tokens and cost per user, failing tools, cache hit rate.
+
+---
+
+## 💬 Branch 016: `genai-chat-016-voice-ui` (future, optional)
+
+- **Voice input and output** with the browser's Speech API (or Whisper).
+- **Vision:** upload an image and ask about it.
+- **Hindi UI:** translate the whole interface.
 
 ---
 
 ## 🎓 Deep Learning Track (learning goals, in parallel)
 
-This project is meant to teach GenAI engineering, not only to ship features. These topics can be studied alongside the branches. Each one is tied to the branch where it is most useful.
+This project is meant to teach GenAI engineering, not only to ship features. Each topic is tied to the branch where it is most useful.
 
 ### 1. 🧠 Inside the LLM (core math and architecture)
 - **Transformers:** how self-attention works (*Attention Is All You Need*).
-- **Tokenization:** BPE (Byte-Pair Encoding), and how tokens affect arithmetic and rare words.
+- **Tokenization:** BPE, and how tokens affect arithmetic, rare words and Hindi text.
 - **Embeddings:** how text becomes numbers, and the different similarity metrics.
 - **Resource:** Andrej Karpathy's *Let's build GPT from scratch*.
 
 ### 2. 🛠️ Fine-tuning and training
-- **PEFT / LoRA:** fine-tune a model on a small GPU without training from scratch.
+- **PEFT / LoRA:** fine-tune a model on a small GPU.
 - **Hugging Face:** the `transformers` and `peft` libraries.
-- **Data preparation:** formatting JSONL datasets for training.
+- **Data preparation:** JSONL datasets for training (thumbs-down data from 015 is a good source).
 
-### 3. 📚 Advanced RAG (builds on Branch 006)
-- **Reranking:** cross-encoders such as `bge-reranker` (the item carried over from Branch 006).
-- **Graph RAG:** storing data as a knowledge graph (nodes and edges).
+### 3. 📚 Advanced RAG (Branch 013)
+- **Reranking:** cross-encoders such as `bge-reranker`.
+- **Fusion:** Reciprocal Rank Fusion for hybrid search.
+- **Graph RAG:** storing data as a knowledge graph.
 - **Multi-vector retrieval:** several vectors per document (question, answer, summary).
 
-### 4. 🤖 AI agents (Branch 008)
-- **ReAct pattern:** reasoning and acting, so the model thinks before each step.
-- **Multi-agent systems:** frameworks such as AutoGen, CrewAI or LangGraph.
-- **MCP (Model Context Protocol):** an open standard for connecting AI to tools.
+### 4. 🤖 AI agents and MCP (Branches 011–014)
+- **ReAct pattern** and bounded tool loops (011).
+- **MCP:** client side (012) and server side (014); tools, resources, prompts, transports, auth.
+- **Multi-agent systems:** router, supervisor with handoffs, plan-and-execute, critic (013); LangGraph, Pydantic AI, OpenAI Agents SDK.
 
-### 5. ⚡ Production and scaling (Branch 009)
-- **LLMOps:** observability with Langfuse or LangSmith.
-- **Evaluation:** RAGAS to measure RAG quality automatically.
-- **High-performance serving:** vLLM or TGI (Text Generation Inference).
+### 5. ⚡ Production and scaling (Branches 010 and 015)
+- **LLMOps:** Langfuse or LangSmith.
+- **Evaluation:** RAGAS / DeepEval in CI.
+- **High-performance serving:** vLLM or TGI.
 
-### 6. 🎨 Multimodal and vision (Branch 010)
-- **Vision models:** LLaVA or GPT-4o Vision for image understanding.
-- **Speech:** Whisper (speech to text) and text to speech.
+### 6. 🎨 Multimodal and vision (Branch 016)
+- **Vision models:** LLaVA or GPT-4o Vision.
+- **Speech:** Whisper and text to speech.
 
 ---
 
 ## 🗂️ Ideas not yet scheduled
 
-These came up in earlier branch notes and are not placed in a branch yet:
-
-- 👍 / 👎 feedback buttons on answers, to collect data for evaluation.
-- A **Stop generation** button (using `AbortController` in the frontend) to interrupt a response mid-way.
+- A **Stop generation** button (`AbortController` in the frontend).
+- JWT in an httpOnly cookie instead of `localStorage`.
+- A guard model (for example Llama Guard) for prompt-injection and safety checks.
+- A retention policy for soft-deleted chats and their documents and vectors.
+- Move settings to a typed `pydantic-settings` class and make `local_settings.py` optional.
 
 ---
 
 ## 💡 Suggested next step
 
-Finish Branch 007 first: Redis rate limiting and complete data erasure. Then start Branch 008 with the simplest tool, the **calculator**. After that add **web search**, and the **database query** last, because it needs the most care with permissions (and is exactly why the security work comes first). Keep local Ollama as the default and make the larger model an option. In parallel, keep growing the evaluation set, so the RAG quality does not quietly get worse while the app gains new features.
+Finish Branch 010 first, starting with **R1 (rotate the keys)**, then **R2 (download route)** and **R3 (JWT refresh)**, because these break the app for real users today. Then build the tool registry (011): MCP and agents both sit on top of it. Keep local Ollama as the default, but use a tool-capable model (7–8B or cloud) from Branch 013 onwards. Keep growing the evaluation set as you go, so RAG quality does not quietly get worse while the app gains new features.
 
 ---
 
@@ -160,38 +321,35 @@ Finish Branch 007 first: Redis rate limiting and complete data erasure. Then sta
 
 <br>
 
-अब तक हमारा project एक छोटे chatbot से बढ़कर एक पूरा GenAI application बन गया है, जिसमें login, database, RAG और file upload हैं। आगे की योजना यह है:
+अब तक project में login, MySQL में chat history, document upload, hybrid RAG (vector + BM25), query rewriting, Redis rate limiting, semantic cache और दो tools (calculator और web search) बन चुके हैं। Branch 007, 008 और 009 पूरी हो गई हैं।
 
-**Branch 006: RAG Quality (पूरी हुई और main में merge ✅)**
-लक्ष्य: retrieval को ज़्यादा सटीक बनाना, ताकि AI सही context से जवाब दे।
-- **Hybrid Search:** ✅ Vector Search के साथ BM25 (keyword search)।
-- **Query Rewriting:** ✅ follow-up सवाल (जैसे "उसका दाम क्या है?") को पहले पिछली बातचीत से पूरा सवाल बनाना, फिर search करना।
-- **Evaluation:** ✅ `evaluate_rag.py` बना (अभी 5 सवाल)।
-- **Reranking:** ⏳ अभी नहीं हुआ, आगे के लिए बचा है।
-- **आगे के लिए बचा काम:** test set को 20-30 सवालों तक बढ़ाना (ऐसे सवाल भी जिनका जवाब document में नहीं है), और Hit@1, Hit@3, MRR नापना।
+**Branch 010: DevOps + Critical Fixes (अभी चल रही है)**
+Code review में पता चला कि `README.010.md` में लिखी कुछ चीज़ें अभी code में नहीं हैं। Dockerfile, docker-compose, Celery और tests बाकी हैं। इसके अलावा ये fixes इसी branch में होंगे:
+- **R1:** `.env` में असली API keys zip के साथ चली गई थीं, इसलिए keys बदलें (rotate करें)।
+- **R2:** download का URL route नहीं है, जिसकी वजह से download 404 देता है।
+- **R3:** JWT refresh नहीं होता, इसलिए user कुछ देर बाद logout हो जाता है।
+- **H6:** non-stream API अभी भी client की भेजी history पर भरोसा करती है।
+- **H8:** logs में user का text लिखा जाता है।
+- **M4:** `chunk_count` गलत आता है।
+- **R5:** एक ही file बार-बार upload हो जाती है।
 
-**Branch 007: Security Hardening (अभी चल रही है)**
-लक्ष्य: Enterprise Architecture Review में मिली गंभीर सुरक्षा खामियाँ ठीक करना। Agent Tools (ख़ासकर MySQL query tool) जोड़ने से पहले यह ज़रूरी है, वरना वह data leak का रास्ता बन सकता है।
-- **Secure Media Files:** ✅ `/media/` का सीधा रास्ता बंद, और फाइल का owner जाँचने वाला download API।
-- **Prompt Injection Defense:** ✅ retrieved text को सिर्फ़ "data" माना जाएगा, "निर्देश" नहीं।
-- **Redis Rate Limiting:** ⏳ in-memory limiter की जगह Redis (chat/upload के लिए per-user, login/register के लिए per-IP)।
-- **Data Erasure:** ⏳ "Clear All" से MySQL, disk और ChromaDB तीनों से data हटे।
+**Branch 011: Tool Registry**
+Tools के लिए एक registry, जिसमें एक turn में कई tool rounds चल सकें (H5)। Tool के बाद का जवाब भी streaming में आएगा, और UI में "🔍 Searching…" दिखेगा।
 
-**Branch 008: Agent Tools**
-लक्ष्य: chatbot को ऐसा Agent बनाना जो काम भी कर सके।
-- **Tool Calling:** Web Search, Calculator और MySQL से data निकालना।
-- **Multi-Step Reasoning:** AI खुद तय करे कि कौन सा tool कब इस्तेमाल करना है।
-- **Bigger LLMs:** छोटे model (1.5B) tool calling में कमज़ोर हैं, इसलिए बड़े model (GPT-4o या Llama 3 70B) पर switch करना। Local Ollama default रहेगा।
+**Branch 012: MCP Client**
+बाहरी MCP servers (web search, read-only database, Drive आदि) के tools config से जुड़ेंगे, code बदलने की ज़रूरत नहीं होगी। पुराना "Database query" tool यहाँ read-only MCP के रूप में आएगा।
 
-**Branch 009: Production**
-लक्ष्य: ऐप को असली users के लिए तैयार करना।
-- **Redis Caching**, **Celery** (बड़े PDF का background processing), **Docker Compose** (एक command में पूरा app), **Observability** (Langfuse जैसे tools) और UI polish (dark mode, loading spinner, बेहतर error messages)।
+**Branch 013: Multi-Agent**
+एक Supervisor हर सवाल को सही agent तक भेजेगा: RAG, Research, SQL या Chat। Critic जवाब जाँचेगा, और Memory Agent सिर्फ याद रखने लायक facts रखेगा। इसी branch में reranker, RRF, हर chat के अलग documents और token budget (H7) भी आएँगे।
 
-**Branch 010: Voice / UI (optional)**
-- Voice input/output, Image upload (Vision) और पूरा Hindi UI।
+**Branch 014: MCP Server**
+हमारा RAG खुद एक MCP server बनेगा, ताकि Claude Desktop या IntelliJ से user के documents में search हो सके।
 
-**🎓 Deep Learning Track (साथ-साथ सीखने के विषय):** LLM के अंदर (Transformers, Tokenization, Embeddings), Fine-tuning (LoRA/PEFT), Advanced RAG (Reranking, Graph RAG), AI Agents (ReAct, MCP), Production (Langfuse, RAGAS, vLLM) और Multimodal (Vision, Whisper)।
+**Branch 015: Eval + Observability**
+30+ सवालों का eval set, CI में automatic evals, Langfuse tracing और 👍/👎 feedback।
 
-**मेरी सलाह:** पहले Branch 007 पूरी कीजिए (Redis rate limiting और complete data erasure)। फिर Branch 008 में सबसे आसान tool (Calculator) से शुरू कीजिए। उसके बाद Web Search, और सबसे आख़िर में Database query। साथ-साथ evaluation set बढ़ाते रहिए, ताकि नए features जुड़ने पर RAG की गुणवत्ता चुपचाप न गिरे।
+**Branch 016: Voice / Vision / Hindi UI (optional)**
+
+**मेरी सलाह:** पहले Branch 010 पूरी कीजिए। शुरुआत keys rotate करने से करें, फिर download route और JWT refresh ठीक करें। उसके बाद 011 की tool registry बनाइए, क्योंकि MCP और agents दोनों उसी पर बनेंगे।
 
 </details>
