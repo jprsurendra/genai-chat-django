@@ -29,6 +29,8 @@ db.sqlite3
 db.sqlite3-journal
 staticfiles/
 mediafiles/
+# User uploads (personal data): never commit
+media/
 
 # =========================
 # Environment Variables
@@ -71,3 +73,9 @@ Thumbs.db
 
 rag/rag_data/chroma_db/
 logs/
+
+# Stray files created by unquoted pip specifiers, e.g. pip install x>=0.3.0
+=*
+
+# Release archives
+dist-release/
