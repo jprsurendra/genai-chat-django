@@ -15,7 +15,6 @@ const historyList = document.getElementById("historyList");
 const newChatBtn  = document.getElementById("newChatBtn");
 const themeToggle = document.getElementById("themeToggle"); // 🔥 NEW
 
-let history = [];
 let isBusy = false;
 let currentSessionId = null;
 
@@ -32,29 +31,72 @@ if (!accessToken) {
     if (navUsername) navUsername.textContent = username;
 }
 
-// Handle Logout
-logoutBtn.addEventListener("click", () => {
+function clearAuthAndRedirect() {
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
     localStorage.removeItem("username");
     window.location.href = "/login/";
+}
+
+// Handle Logout: blacklist the refresh token on the server (best effort), then clear locally
+logoutBtn.addEventListener("click", async () => {
+    const refresh = localStorage.getItem("refresh_token");
+    if (refresh) {
+        try {
+            await fetchWithAuth("/api/auth/logout", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refresh }),
+            });
+        } catch (_) { /* ignore: we log out locally anyway */ }
+    }
+    clearAuthAndRedirect();
 });
 
-// Fetch Wrapper to handle token expiration automatically
-async function fetchWithAuth(url, options = {}) {
-    options.headers = options.headers || {};
+// R3 FIX: refresh the access token instead of logging the user out.
+// Several requests may get 401 at the same time, so they share one refresh call.
+let refreshPromise = null;
+
+async function refreshAccessToken() {
+    if (!refreshPromise) {
+        refreshPromise = (async () => {
+            const refresh = localStorage.getItem("refresh_token");
+            if (!refresh) return false;
+            try {
+                const resp = await fetch("/api/auth/refresh", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ refresh }),
+                });
+                if (!resp.ok) return false;
+                const data = await resp.json();
+                localStorage.setItem("access_token", data.access);
+                // ROTATE_REFRESH_TOKENS=True: the server also sends a new refresh token
+                if (data.refresh) localStorage.setItem("refresh_token", data.refresh);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        })().finally(() => { refreshPromise = null; });
+    }
+    return refreshPromise;
+}
+
+// Fetch Wrapper: adds the JWT, and on 401 refreshes the token once and retries
+async function fetchWithAuth(url, options = {}, isRetry = false) {
+    const opts = { ...options, headers: { ...(options.headers || {}) } };
     const token = localStorage.getItem("access_token");
     if (token) {
-        options.headers["Authorization"] = `Bearer ${token}`;
+        opts.headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const response = await fetch(url, options);
+    const response = await fetch(url, opts);
 
     if (response.status === 401) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        localStorage.removeItem("username");
-        window.location.href = "/login/";
+        if (!isRetry && await refreshAccessToken()) {
+            return fetchWithAuth(url, options, true);
+        }
+        clearAuthAndRedirect();
         throw new Error("Session expired");
     }
 
@@ -120,7 +162,47 @@ function addMessage(role, content, timestamp = null, streaming = false) {
   return bubble;
 }
 
-function renderDocumentBubble(filename, fileUrl, timestamp, docId) {
+// Downloads a document through the authenticated API (the /media/ URL is not public)
+async function downloadDocument(docId, filename) {
+    try {
+        const resp = await fetchWithAuth(`/api/download/${encodeURIComponent(docId)}`);
+        if (!resp.ok) throw new Error("Download failed");
+
+        const blob = await resp.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    } catch (err) {
+        alert("Error downloading file: " + err.message);
+    }
+}
+
+// Builds a download link with DOM APIs, so the filename is never parsed as HTML (R4)
+function buildDownloadLink(docId, filename, className = "text-decoration-none") {
+    const link = document.createElement("a");
+    link.href = "#";
+    link.className = className;
+    link.addEventListener("click", (e) => {
+        e.preventDefault();
+        downloadDocument(docId, filename);
+    });
+
+    const icon = document.createElement("i");
+    icon.className = "bi bi-download";
+    const label = document.createElement("b");
+    label.textContent = " Download: ";
+    link.appendChild(icon);
+    link.appendChild(label);
+    link.appendChild(document.createTextNode(filename));
+    return link;
+}
+
+function renderDocumentBubble(filename, timestamp, docId) {
     const wrap = document.createElement("div");
     wrap.className = "msg assistant";
 
@@ -128,31 +210,7 @@ function renderDocumentBubble(filename, fileUrl, timestamp, docId) {
     bubble.className = "bubble";
     bubble.style.backgroundColor = "#e9ecef";
 
-    const link = document.createElement("a");
-    link.href = "javascript:void(0);";
-    link.onclick = async () => {
-        try {
-            const resp = await fetchWithAuth(`/api/download/${docId}`);
-            if (!resp.ok) throw new Error("Download failed");
-
-            const blob = await resp.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
-        } catch (err) {
-            alert("Error downloading file: " + err.message);
-        }
-    };
-
-    link.className = "text-decoration-none";
-    link.innerHTML = `<i class="bi bi-download"></i> <b>Download:</b> ${filename}`;
-
-    bubble.appendChild(link);
+    bubble.appendChild(buildDownloadLink(docId, filename));
 
     const timeString = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const timeDiv = document.createElement("div");
@@ -282,7 +340,6 @@ async function loadChatSession(sessionId) {
                     type: 'document',
                     id: doc.id,
                     filename: doc.filename,
-                    file_url: doc.file,
                     timestamp: new Date(doc.uploaded_at)
                 });
             });
@@ -294,9 +351,8 @@ async function loadChatSession(sessionId) {
             combinedItems.forEach(item => {
                 if (item.type === 'message') {
                     addMessage(item.role, item.content, item.timestamp);
-                    history.push({ role: item.role, content: item.content });
                 } else if (item.type === 'document') {
-                    renderDocumentBubble(item.filename, item.file_url, item.timestamp, item.id);
+                    renderDocumentBubble(item.filename, item.timestamp, item.id);
                 }
             });
         } else {
@@ -305,7 +361,6 @@ async function loadChatSession(sessionId) {
                     <i class="bi bi-chat-dots display-4"></i>
                     <p class="mt-2 mb-0">Ask anything to get started.</p>
                 </div>`;
-            history = [];
         }
 
         loadSidebarHistory();
@@ -316,7 +371,6 @@ async function loadChatSession(sessionId) {
 
 function startNewChat() {
     currentSessionId = null;
-    history = [];
     chatBox.innerHTML = `
         <div class="welcome text-center text-muted py-5">
             <i class="bi bi-chat-dots display-4"></i>
@@ -355,9 +409,9 @@ form.addEventListener("submit", async (e) => {
     const resp = await fetchWithAuth("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      // H6: no history in the body; the server loads it from the DB for this session
       body: JSON.stringify({
           message: text,
-          history: history.slice(-10),
           use_fast: useFast,
           session_id: currentSessionId
       }),
@@ -422,10 +476,7 @@ form.addEventListener("submit", async (e) => {
 
     bubble.innerHTML = contentHtml;
 
-    if (full) {
-      history.push({ role: "user", content: text });
-      history.push({ role: "assistant", content: full });
-    } else {
+    if (!full) {
       bubble.textContent = "(empty response)";
     }
   } catch (err) {
@@ -458,7 +509,7 @@ fileUpload.addEventListener("change", async (e) => {
   addMessage("user", `📎 ${file.name}`);
 
   // 🔥 NEW: Show a Bootstrap spinner while uploading
-  const bubble = addMessage("assistant", "", true);
+  const bubble = addMessage("assistant", "", null, true);
   bubble.innerHTML = `
     <div class="d-flex align-items-center">
       <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
@@ -479,22 +530,40 @@ fileUpload.addEventListener("change", async (e) => {
     });
     const data = await resp.json().catch(() => ({}));
 
+    // R5: the same file was already uploaded; show it as information, not as an error
+    if (resp.status === 409) {
+        bubble.classList.remove("typing");
+        bubble.textContent = data.detail || "This file is already uploaded.";
+        if (data.document_id) {
+            const linkWrap = document.createElement("div");
+            linkWrap.className = "mt-2";
+            linkWrap.appendChild(buildDownloadLink(data.document_id, data.filename || file.name,
+                                                   "btn btn-sm btn-outline-secondary"));
+            bubble.appendChild(linkWrap);
+        }
+        return;
+    }
+
     if (!resp.ok) {
         throw new Error(data.detail || data.error || `Upload failed (${resp.status})`);
     }
 
     bubble.classList.remove("typing");
+    bubble.innerHTML = renderMarkdown(data.message || "Document uploaded.");
 
-    let successHtml = renderMarkdown(data.message || "Document uploaded.");
-
-    if (data.file_url) {
-        let safeUrl = data.file_url.startsWith('/media/') ? data.file_url : `/media/${data.file_url}`;
-        successHtml += `<div class="mt-2"><a href="${safeUrl}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i> Download ${data.filename}</a></div>`;
+    if (data.document_id) {
+        const linkWrap = document.createElement("div");
+        linkWrap.className = "mt-2";
+        linkWrap.appendChild(buildDownloadLink(data.document_id, data.filename || file.name,
+                                               "btn btn-sm btn-outline-primary"));
+        bubble.appendChild(linkWrap);
     }
 
-    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    successHtml += `<div class="message-time" style="font-size: 0.75rem; margin-top: 4px; opacity: 0.7;">${timeString}</div>`;
-    bubble.innerHTML = successHtml;
+    const timeDiv = document.createElement("div");
+    timeDiv.className = "message-time";
+    timeDiv.style.cssText = "font-size: 0.75rem; margin-top: 4px; opacity: 0.7;";
+    timeDiv.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    bubble.appendChild(timeDiv);
 
   } catch (err) {
     bubble.classList.remove("typing");
