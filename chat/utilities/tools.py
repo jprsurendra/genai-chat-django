@@ -5,6 +5,8 @@ import re
 from django.conf import settings
 from tavily import TavilyClient
 
+from chat.utilities.log_safety import redact
+
 logger = logging.getLogger(__name__)
 
 # Safe operators for the calculator
@@ -48,7 +50,7 @@ def calculate(expression: str) -> str:
         result = _eval(node)
         return str(result)
     except Exception as e:
-        logger.error(f"Calculator error for '{expression}': {e}")
+        logger.error(f"Calculator error for {redact(expression)}: {type(e).__name__}")
         return f"Error: Could not calculate '{expression}'"
 
 
@@ -87,5 +89,5 @@ def web_search(query: str) -> str:
         return "<untrusted_web_data>\n" + "\n\n".join(formatted_results) + "\n</untrusted_web_data>"
 
     except Exception as e:
-        logger.error(f"Web search error for '{query}': {e}")
+        logger.error(f"Web search error for {redact(query)}: {type(e).__name__}")
         return f"Error: Could not search the web for '{query}'"

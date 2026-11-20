@@ -1,7 +1,7 @@
+import hashlib
 import json
 import logging
 import os
-import tempfile
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
@@ -17,11 +17,62 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from chat.dtos import ChatRequest
+from chat.dtos import ChatMessage as ChatMessageDTO
 from chat.utilities import check_rate_limit, get_llm_service
 from chat.models import ChatSession, ChatMessage, UploadedDocument
 
 logger = logging.getLogger(__name__)
 GENERIC_ERROR = "Something went wrong while processing your request."
+
+# How many recent messages to load from the DB as LLM context.
+# (LLMService trims further; loading the whole session would waste DB time.)
+HISTORY_LOAD_LIMIT = 20
+
+
+def get_or_create_session(user, session_id, first_message: str):
+    """
+    Returns (session, error_response).
+    An existing session must belong to `user` and not be soft-deleted; otherwise a new one is created.
+    """
+    if session_id:
+        session = ChatSession.objects.filter(id=session_id, user=user, is_deleted=False).first()
+        if not session:
+            return None, Response({"error": "Invalid session ID"}, status=status.HTTP_403_FORBIDDEN)
+        return session, None
+    title = first_message[:30] + "..." if len(first_message) > 30 else first_message
+    return ChatSession.objects.create(user=user, title=title), None
+
+
+def load_history(session) -> list[ChatMessageDTO]:
+    """
+    Loads the recent conversation from the DB (H6: never trust a client-supplied history).
+    Must be called BEFORE the new user message is saved, so it is not duplicated.
+    """
+    recent = list(
+        ChatMessage.objects.filter(session=session, is_deleted=False)
+        .order_by("-created_at")[:HISTORY_LOAD_LIMIT]
+    )
+    recent.reverse()
+    return [ChatMessageDTO(role=m.role, content=m.content) for m in recent]
+
+
+def file_sha256(uploaded_file) -> str:
+    """SHA-256 of an uploaded file, read in chunks so large files do not fill memory."""
+    h = hashlib.sha256()
+    for chunk in uploaded_file.chunks():
+        h.update(chunk)
+    uploaded_file.seek(0)
+    return h.hexdigest()
+
+
+def delete_document(doc) -> None:
+    """Deletes the DB row AND the file on disk (doc.delete() alone leaves the file behind)."""
+    if doc.file:
+        try:
+            doc.file.delete(save=False)
+        except OSError as e:
+            logger.error(f"Failed to delete file for document {doc.id}: {e}")
+    doc.delete()
 
 
 class ChatAPIView(APIView):
@@ -37,10 +88,10 @@ class ChatAPIView(APIView):
     def llm_service(self):
         return get_llm_service()
 
-    def generate_post_response(self, chat_request: ChatRequest, user_id: str):
+    def generate_post_response(self, chat_request: ChatRequest, history: list[ChatMessageDTO], user_id: str):
         try:
             reply = async_to_sync(self.llm_service.generate_reply)(
-                chat_request.message, chat_request.history, str(user_id), chat_request.use_fast
+                chat_request.message, history, str(user_id), chat_request.use_fast
             )
             return Response({"reply": reply})
         except Exception:
@@ -49,17 +100,11 @@ class ChatAPIView(APIView):
 
     def post(self, request):
         logger.info(f"User {request.user.id} started a chat session.")
+        user_id = request.user.id
         try:
             # 🔥 SECURITY FIX: Use user_id instead of IP
-            # check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="chat")
-            user_id = request.user.id
             check_rate_limit(str(user_id), scope="chat")
             req = ChatRequest(**request.data)
-
-            # User ID is extracted from the JWT token
-            user_id = request.user.id
-            req = ChatRequest(**request.data)
-
         except PermissionDenied as e:
             return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         except ValidationError as e:
@@ -86,26 +131,27 @@ class ChatAPIView(APIView):
         # self.llm_service.test_manual_vector_store(req.message)
         # =====================================================================
 
-        # 1. Create or get session (SECURITY FIX: Ensure it belongs to the user)
-        session_id = request.data.get("session_id")
-        if session_id:
-            session = ChatSession.objects.filter(id=session_id, user=request.user).first()
-            if not session:
-                return Response({"error": "Invalid session ID"}, status=status.HTTP_403_FORBIDDEN)
-        else:
-            title = req.message[:30] + "..." if len(req.message) > 30 else req.message
-            session = ChatSession.objects.create(user=request.user, title=title)
 
-        # 2. Save User Message to DB
+
+        # 1. Create or get session (SECURITY FIX: Ensure it (must) belongs to the user)
+        session, error = get_or_create_session(request.user, req.session_id, req.message)
+        if error:
+            return error
+
+        # 2. H6 FIX: history comes from the DB, not from the request body
+        history = load_history(session)
+
+        # 3. Save User Message to DB
         ChatMessage.objects.create(session=session, role="user", content=req.message)
 
-        # 3. Get AI Response (Call LLM Non-streaming)
-        response = self.generate_post_response(req, user_id)
+        # 4. Get AI Response (Call LLM Non-streaming)
+        response = self.generate_post_response(req, history, user_id)
 
-        # 4. Save AI Reply to DB
+        # 5. Save AI Reply to DB
         if response.status_code == 200:
             ai_reply = response.data.get("reply", "")
             ChatMessage.objects.create(session=session, role="assistant", content=ai_reply)
+            response.data["session_id"] = session.id
 
         return response
 
@@ -116,8 +162,6 @@ class ChatAPIView(APIView):
             # 🔥 SECURITY FIX: Use user_id instead of IP
             # check_rate_limit(request.META.get("REMOTE_ADDR", "unknown"), scope="clear")
             check_rate_limit(str(user_id), scope="clear")
-
-            user_id = request.user.id
         except PermissionDenied as e:
             return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
@@ -170,19 +214,13 @@ class ChatStreamAPIView(ChatAPIView):
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create DB Session or get existing one (SECURITY FIX)
-        session_id = request.data.get("session_id")
-        if session_id:
-            session = ChatSession.objects.filter(id=session_id, user=request.user).first()
-            if not session:
-                return Response({"error": "Invalid session ID"}, status=status.HTTP_403_FORBIDDEN)
-        else:
-            title = req.message[:30] + "..." if len(req.message) > 30 else req.message
-            session = ChatSession.objects.create(user=request.user, title=title)
+        # Create DB Session or get existing one (must belong to the user)
+        session, error = get_or_create_session(request.user, req.session_id, req.message)
+        if error:
+            return error
 
         # 🔥 SECURITY FIX (H6): Load history from DB instead of trusting the client
-        db_history = ChatMessage.objects.filter(session=session, is_deleted=False).order_by('created_at')
-        history_list = [ChatMessage(role=m.role, content=m.content) for m in db_history]
+        history_list = load_history(session)
 
         # Save User Message
         ChatMessage.objects.create(session=session, role="user", content=req.message)
@@ -195,8 +233,7 @@ class ChatStreamAPIView(ChatAPIView):
                 # Send the new session ID to the frontend immediately
                 yield f"data: {json.dumps({'session_id': session.id})}\n\n"
 
-                # 🔥 FIX (H6): Pass the DB history to the service, NOT req.history
-                # in old code  arguments: req.message, req.history (new : history_list), str(user_id), req.use_fast
+                # 🔥 FIX (H6): Pass the DB history to the service, never a client-supplied one
                 async for delta in service.stream_reply(
                         req.message, history_list, str(user_id), req.use_fast
                 ):
@@ -244,7 +281,7 @@ class ChatHistoryAPIView(APIView):
                 messages = session.messages.filter(is_deleted=False).values('role', 'content', 'created_at')
 
                 # Fetch documents for this session
-                documents = session.documents.all().values('id', 'filename', 'file', 'uploaded_at')
+                documents = session.documents.all().values('id', 'filename', 'uploaded_at')
 
                 return Response({
                     "id": session.id,
@@ -354,43 +391,59 @@ class UploadDocumentAPIView(APIView):
         if uploaded_file.size > settings.RAG_MAX_UPLOAD_BYTES:
             return Response({"detail": "File too large."}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
 
-        # 1. Get Session (if any)
+        # 1. Reject duplicates (R5): same content already uploaded by this user
+        file_hash = file_sha256(uploaded_file)
+        existing = UploadedDocument.objects.filter(user=request.user, file_hash=file_hash).first()
+        if existing:
+            return Response({
+                "detail": f"This file is already uploaded (as '{existing.filename}').",
+                "document_id": existing.id,
+                "filename": existing.filename,
+            }, status=status.HTTP_409_CONFLICT)
+
+        # 2. Get Session (if any)
         session_id = request.data.get("session_id")
         chat_session = None
         if session_id:
-            chat_session = ChatSession.objects.filter(id=session_id, user=request.user).first()
+            chat_session = ChatSession.objects.filter(id=session_id, user=request.user, is_deleted=False).first()
 
-        # 2. Create the Database Entry FIRST and let Django save the file
+        # 3. Create the Database Entry FIRST and let Django save the file
         # (Django will automatically use the 'user_directory_path' function from models.py)
         doc = UploadedDocument.objects.create(
             user=request.user,
             chat_session=chat_session,
             file=uploaded_file,  # Pass the file directly
-            filename=safe_name
+            filename=safe_name,
+            file_hash=file_hash,
         )
 
         # Now the file is saved at: media/documents/user_<id>/filename.ext
         file_path = doc.file.path
 
         try:
-            # 3. Pass the saved file path to RAG Engine for processing
-            result_message = self.llm_service.upload_document(file_path, safe_name, str(user_id))
-
-            # Extract chunk count from the result message (optional)
-            doc.chunk_count = result_message.count('chunks')
-            doc.save()
-
-            return Response({
-                "message": result_message,
-                "file_url": doc.file.url,  # URL to download the file
-                "filename": safe_name
-            }, status=status.HTTP_200_OK)
-
+            # 4. Pass the saved file path to RAG Engine for processing
+            result_message, chunk_count = self.llm_service.upload_document(file_path, safe_name, str(user_id))
         except Exception:
             logger.exception("Upload processing failed")
-            # If processing fails, delete the file and DB entry
-            doc.delete()
+            # If processing fails, delete the file and the DB entry
+            delete_document(doc)
             return Response({"detail": GENERIC_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        if chunk_count == 0:
+            # Nothing could be indexed (empty or unreadable file): do not keep a useless upload
+            delete_document(doc)
+            return Response({"detail": result_message}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        # 5. M4 FIX: store the real chunk count returned by the RAG engine
+        doc.chunk_count = chunk_count
+        doc.save(update_fields=["chunk_count"])
+
+        return Response({
+            "message": result_message,
+            "document_id": doc.id,  # download via the authenticated /api/download/<id> endpoint
+            "filename": safe_name,
+            "chunk_count": chunk_count,
+        }, status=status.HTTP_200_OK)
 
 
 class DownloadDocumentAPIView(APIView):

@@ -13,11 +13,15 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     """
     DTO for the incoming POST request payload for chatting.
-    Enforces message length and caps the history size to prevent token overflow.
+    Enforces message length.
+
+    Note (H6): there is deliberately no `history` field. The conversation history is
+    always loaded from the database on the server; a client-supplied history could be
+    forged (for example fake "assistant" turns). Extra fields sent by old clients are ignored.
     """
     message: str = Field(..., min_length=1, max_length=4000)
-    history: list[ChatMessage] = Field(default_factory=list, max_length=50)
     use_fast: bool = False
+    session_id: int | None = None
 
 class ChatResponse(BaseModel):
     """

@@ -67,6 +67,13 @@ class UploadedDocument(models.Model):
     filename = models.CharField(max_length=255)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     chunk_count = models.IntegerField(default=0)
+    # SHA-256 of the file content, used to reject duplicate uploads per user (R5).
+    # Not a DB unique constraint: older rows already contain duplicates, and MySQL
+    # does not support conditional unique constraints. The upload view enforces it.
+    file_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["user", "file_hash"], name="doc_user_hash_idx")]
 
     def __str__(self):
         return f"{self.filename} ({self.user.username})"

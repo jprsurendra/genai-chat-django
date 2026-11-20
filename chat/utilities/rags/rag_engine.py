@@ -16,6 +16,8 @@ from pypdf import PdfReader
 # Import BM25 for Hybrid Search
 from rank_bm25 import BM25Okapi
 
+from chat.utilities.log_safety import redact
+
 logger = logging.getLogger(__name__)
 
 # Regex to validate session IDs (8-64 characters, alphanumeric, dashes, underscores)
@@ -197,8 +199,14 @@ class RAGEngine:
         """Retrieves relevant past statements made by the user."""
         return self._query(self.memory, query, session_id, top_k)
 
-    def process_and_store_file(self, file_path: str, original_filename: str, user_id: str) -> str:
-        """Reads a PDF/TXT file, chunks it, and stores embeddings with metadata."""
+    def process_and_store_file(self, file_path: str, original_filename: str, user_id: str) -> tuple[str, int]:
+        """
+        Reads a PDF/TXT file, chunks it, and stores embeddings with metadata.
+
+        Returns:
+            (message, chunk_count). chunk_count is 0 when nothing could be stored
+            (unsupported or empty file), so the caller can treat that as a failure (M4).
+        """
         lower = file_path.lower()
         filename = original_filename  # Use the original filename passed from the view
 
@@ -217,10 +225,10 @@ class RAGEngine:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 text = f.read()
         else:
-            return "Unsupported file format. Please upload PDF or TXT."
+            return "Unsupported file format. Please upload PDF or TXT.", 0
 
         if not text.strip():
-            return "File is empty or could not be read."
+            return "File is empty or could not be read.", 0
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50, length_function=len)
         raw_chunks = splitter.split_text(text)
@@ -254,13 +262,16 @@ class RAGEngine:
             # Generate a unique ID based on user, filename, page, and content
             ids.append(hashlib.sha1(f"{user_id}:{filename}:{current_page}:{chunk}".encode("utf-8")).hexdigest())
 
+        if not chunks:
+            return "File is empty or could not be read.", 0
+
         # Upsert (Update or Insert) to ChromaDB
         self.documents.upsert(
             documents=chunks,
             ids=ids,
             metadatas=metadatas,
         )
-        return f"Successfully uploaded and embedded {len(chunks)} chunks from {filename}."
+        return f"Successfully uploaded and embedded {len(chunks)} chunks from {filename}.", len(chunks)
 
     @staticmethod
     def is_memorable(content: str) -> bool:
@@ -363,7 +374,7 @@ class RAGEngine:
 
             self.redis_client.hset(cache_key, query, cache_data)
             self.redis_client.expire(cache_key, ttl)
-            logger.info(f"💾 Saved to Cache: '{query}'")
+            logger.info(f"💾 Saved to Cache: {redact(query)}")
 
         except Exception as e:
             logger.error(f"Cache save failed: {e}")

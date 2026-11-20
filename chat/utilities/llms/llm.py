@@ -3,6 +3,7 @@ from django.conf import settings
 from chat.dtos import ChatMessage
 from chat.utilities.rags.rag_engine import RAGEngine
 from chat.utilities.tools import calculate, web_search  # 🔥 NEW: Import both tools
+from chat.utilities.log_safety import redact
 import logging
 import json  # 🔥 NEW: For parsing tool arguments
 from functools import lru_cache
@@ -107,7 +108,7 @@ class LLMService:
             content = resp.choices[0].message.content
             if content:
                 rewritten = content.strip()
-                logger.info(f"🔄 Query Rewritten: '{user_message}' -> '{rewritten}'")
+                logger.info(f"🔄 Query Rewritten: {redact(user_message)} -> {redact(rewritten)}")
                 return rewritten
             else:
                 return user_message
@@ -197,7 +198,7 @@ class LLMService:
         Used for Server-Sent Events (SSE) streaming.
         """
         # Use logging instead of print
-        logger.info(f"▶️ [STREAM START] User: {user_message}, Session: {session_id}")
+        logger.info(f"▶️ [STREAM START] Message: {redact(user_message)}, User: {session_id}")
 
         try:
             # 🔥 NEW: 1. Check Semantic Cache FIRST
@@ -216,7 +217,7 @@ class LLMService:
             docs = self.rag_engine.retrieve_documents(search_query, session_id, top_k=3)
             memories = self.rag_engine.retrieve_memories(search_query, session_id, top_k=3)
 
-            logger.info(f"🔍 [RAG] Found {len(docs)} docs and {len(memories)} memories for query: '{search_query}'")
+            logger.info(f"🔍 [RAG] Found {len(docs)} docs and {len(memories)} memories for query: {redact(search_query)}")
 
             # 2. Build Messages (use the original user_message here so the LLM answers naturally)
             messages = self._build_messages(user_message, history, docs, memories)
@@ -306,7 +307,7 @@ class LLMService:
 
             # 🔥 NEW: If the LLM requested a tool, execute it and call LLM again
             if tool_calls:
-                logger.info(f"🛠️ Tool Calls Requested: {tool_calls}")
+                logger.info(f"🛠️ Tool Calls Requested: {[tc['function']['name'] for tc in tool_calls]}")
 
                 # 1. Append the assistant's tool call message to history
                 messages.append({"role": "assistant", "tool_calls": tool_calls})
@@ -316,7 +317,7 @@ class LLMService:
                     if tc["function"]["name"] == "calculate":
                         args = json.loads(tc["function"]["arguments"])
                         expression = args.get("expression", "")
-                        logger.info(f"🧮 Calculating: {expression}")
+                        logger.info(f"🧮 Calculating: {redact(expression)}")
                         result = calculate(expression)
 
                         # 3. Append the tool result to history
@@ -330,7 +331,7 @@ class LLMService:
                     elif tc["function"]["name"] == "web_search":
                         args = json.loads(tc["function"]["arguments"])
                         query = args.get("query", "")
-                        logger.info(f"🌐 Searching Web: {query}")
+                        logger.info(f"🌐 Searching Web: {redact(query)}")
                         result = web_search(query)
 
                         messages.append({
@@ -372,8 +373,8 @@ class LLMService:
             # Re-raise to let the view handle it
             raise e
 
-    def upload_document(self, file_path: str, original_filename: str, user_id: str) -> str:
-        """Passes uploaded file to RAG Engine."""
+    def upload_document(self, file_path: str, original_filename: str, user_id: str) -> tuple[str, int]:
+        """Passes uploaded file to RAG Engine. Returns (message, chunk_count)."""
         return self.rag_engine.process_and_store_file(file_path, original_filename, user_id)
 
     def clear_session(self, session_id: str) -> None:

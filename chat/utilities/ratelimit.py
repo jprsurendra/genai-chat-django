@@ -1,4 +1,6 @@
 import time
+import uuid
+
 import redis
 import logging
 from django.conf import settings
@@ -68,8 +70,9 @@ def check_rate_limit(ip: str, scope: str = "chat", limit: int = None) -> None:
         # 4. Count current requests in the window
         pipe.zcard(key)
 
-        # 5. Add the current timestamp
-        pipe.zadd(key, {str(now): now})
+        # 5. Add the current timestamp. The member gets a random suffix so two requests
+        #    in the same instant are both counted (a plain str(now) could collide).
+        pipe.zadd(key, {f"{now}:{uuid.uuid4().hex[:8]}": now})
 
         # 6. Set expiry on the key to prevent memory leaks
         pipe.expire(key, window)
@@ -87,6 +90,21 @@ def check_rate_limit(ip: str, scope: str = "chat", limit: int = None) -> None:
         # If Redis fails during execution, block the request (Fail-Closed)
         logger.error(f"Redis rate limit error: {e}")
         raise PermissionDenied("Service temporarily unavailable. Please try again later.")
+
+
+def get_client_ip(request) -> str:
+    """
+    Returns the client IP used for per-IP rate limits (login, register, token refresh).
+
+    X-Forwarded-For is only trusted when TRUST_X_FORWARDED_FOR=1, i.e. when the app runs
+    behind a reverse proxy you control; otherwise any client could spoof the header.
+    """
+    if getattr(settings, "TRUST_X_FORWARDED_FOR", False):
+        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+        if forwarded:
+            # The left-most address is the original client
+            return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "unknown")
 
 
 def reset_rate_limits() -> None:
