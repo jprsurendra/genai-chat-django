@@ -2,9 +2,11 @@
 Django settings for config project.
 Default settings only. Custom settings are in local_settings.py
 """
+from datetime import timedelta
 from pathlib import Path
 import os
 import sys
+import warnings
 from dotenv import load_dotenv
 
 # Load environment variables at the very beginning
@@ -23,7 +25,10 @@ sys.path.insert(0, str(BASE_DIR))
 try:
     from local_settings import *
 except ImportError:
-    raise ImportError("❌ local_settings.py not found in the root directory! Please create it.")
+    # local_settings.py is git-ignored. Fall back to the committed example so a fresh
+    # clone (or CI) can start; all secrets still come from environment variables.
+    warnings.warn("local_settings.py not found; using local_settings_example.py")
+    from local_settings_example import *
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 # ==========================================
@@ -44,6 +49,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",  # refresh-token rotation + logout
     "accounts",  # Auth API
     "chat",      # Chat & RAG API
     "web_ui",    # Frontend UI (New)
@@ -63,6 +69,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",  # <-- required
     "django.contrib.messages.middleware.MessageMiddleware",     # <-- required
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 
@@ -111,6 +118,58 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [ "rest_framework.permissions.IsAuthenticated",],
     "UNAUTHENTICATED_USER": None,
 }
+
+# ==========================================
+# JWT SETTINGS (M5 / R3)
+# ==========================================
+# The frontend refreshes the access token automatically (see static/web_ui/app.js),
+# so a short access lifetime does not log the user out.
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(os.getenv("JWT_ACCESS_MINUTES", "30"))),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(os.getenv("JWT_REFRESH_DAYS", "7"))),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+}
+
+# ==========================================
+# PASSWORD VALIDATION (M5)
+# ==========================================
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+# ==========================================
+# SECURITY HEADERS (M5)
+# ==========================================
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # Turn these on once the app is served over HTTPS (usually behind Nginx).
+    SECURE_SSL_REDIRECT = os.getenv("DJANGO_SECURE_SSL_REDIRECT", "0") == "1"
+    SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_SECURE_HSTS_SECONDS", "0"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+    if os.getenv("TRUST_X_FORWARDED_FOR", "0") == "1":
+        SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# ==========================================
+# LOGGING PRIVACY (H8)
+# ==========================================
+# User text (prompts, queries, tool arguments) is NOT written to logs unless this is on.
+# Never enable it in production.
+LOG_USER_CONTENT = DEBUG and os.getenv("LOG_USER_CONTENT", "0") == "1"
+
+# ==========================================
+# AUTH RATE LIMIT (R11) - per client IP, for login / register / refresh
+# ==========================================
+AUTH_RATE_LIMIT = int(os.getenv("AUTH_RATE_LIMIT", "10"))
 
 # ==========================================
 # STORAGE SETTINGS (Depends on DEBUG from local_settings)
