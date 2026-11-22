@@ -1,42 +1,31 @@
+import asyncio
 import os
 import re
+
 import django
-import asyncio
 
 # Setup Django environment
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 django.setup()
 
-from chat.utilities.rags.rag_engine import RAGEngine
-from chat.utilities.llms.llm import get_llm_service
 from chat.dtos import ChatMessage
+from chat.utilities.llms.llm import get_llm_service
+from chat.utilities.rags.rag_engine import RAGEngine
 
 # ==========================================
 # 1. TEST DATASET (20-30 Questions Recommended)
 # ==========================================
 TEST_CASES = [
-    {
-        "query": "Who wrote the famous book The Guide?",
-        "pattern": r"R\.\s?K\.\s?Narayan"
-    },
-    {
-        "query": "What is the capital of South Korea?",
-        "pattern": r"\bSeoul\b"
-    },
-    {
-        "query": "Complete the proverb: It's better to be safe than...",
-        "pattern": r"\bSorry\b"
-    },
-    {
-        "query": "Who is the Prime Minister of the United Kingdom?",
-        "pattern": r"Keir Starmer"
-    },
+    {"query": "Who wrote the famous book The Guide?", "pattern": r"R\.\s?K\.\s?Narayan"},
+    {"query": "What is the capital of South Korea?", "pattern": r"\bSeoul\b"},
+    {"query": "Complete the proverb: It's better to be safe than...", "pattern": r"\bSorry\b"},
+    {"query": "Who is the Prime Minister of the United Kingdom?", "pattern": r"Keir Starmer"},
     {
         # NEGATIVE TEST: This question is NOT in the PDF.
         # The RAG should return 0 documents (if distance cutoff works).
         "query": "What is the answer to 2+2?",
-        "pattern": None
-    }
+        "pattern": None,
+    },
 ]
 
 
@@ -52,7 +41,7 @@ def first_hit_rank(docs, pattern):
     if docs:
         print(f"   [DEBUG] Retrieved {len(docs)} docs. Top doc: {docs[0]['text'][:50]}...")
     else:
-        print(f"   [DEBUG] Retrieved 0 docs.")
+        print("   [DEBUG] Retrieved 0 docs.")
 
     for rank, d in enumerate(docs, 1):
         if re.search(pattern, d["text"], re.IGNORECASE):
@@ -130,7 +119,7 @@ def evaluate_retrieval(user_id: str):
     accuracy_hit3 = (hit3 / n_pos) * 100 if n_pos > 0 else 0
     avg_mrr = mrr / n_pos if n_pos > 0 else 0
 
-    print(f"\n📊 FINAL SCORE")
+    print("\n📊 FINAL SCORE")
     print(f"Positive Tests: {n_pos}")
     print(f"Hit@1 (Top result is correct): {hit1}/{n_pos} ({accuracy_hit1:.1f}%)")
     print(f"Hit@3 (Top 3 results contain answer): {hit3}/{n_pos} ({accuracy_hit3:.1f}%)")
@@ -143,7 +132,7 @@ def evaluate_retrieval(user_id: str):
 # ==========================================
 async def test_query_rewriting():
     print(f"\n{'=' * 60}")
-    print(f"🧠 TESTING QUERY REWRITING")
+    print("🧠 TESTING QUERY REWRITING")
     print(f"{'=' * 60}\n")
 
     llm = get_llm_service()
@@ -151,13 +140,13 @@ async def test_query_rewriting():
     # Simulate a conversation history
     history = [
         ChatMessage(role="user", content="Who is the Prime Minister of the United Kingdom?"),
-        ChatMessage(role="assistant", content="The Prime Minister of the United Kingdom is Keir Starmer.")
+        ChatMessage(role="assistant", content="The Prime Minister of the United Kingdom is Keir Starmer."),
     ]
 
     # Follow-up question with a pronoun
     new_query = "How old is he?"
 
-    print(f"History:")
+    print("History:")
     for msg in history:
         print(f"  [{msg.role}]: {msg.content}")
 

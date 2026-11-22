@@ -1,6 +1,6 @@
 # Branch 007: `genai-chat-007-security-hardening` 🚧
 
-**Goal:** 
+**Goal:**
 To fix critical security vulnerabilities identified in the Enterprise Architecture Review. This branch focuses on securing file access, preventing prompt injection, hardening the rate limiter, and ensuring complete data deletion. We must secure the foundation before adding advanced Agent Tools in future branches.
 
 ---

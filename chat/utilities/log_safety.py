@@ -5,12 +5,13 @@ Logs are copied to files, shipped to log services and read by many people, so th
 not contain what users type. Use `redact()` wherever a log line would include a prompt,
 a search query, a tool argument or a document excerpt.
 """
+
 import hashlib
 
 from django.conf import settings
 
 
-def redact(text) -> str:
+def redact(text: object) -> str:
     """
     Returns a privacy-safe description of `text` for logging.
 

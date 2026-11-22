@@ -1,12 +1,14 @@
-from openai import AsyncOpenAI
+import json  # 🔥 NEW: For parsing tool arguments
+import logging
+from functools import lru_cache
+
 from django.conf import settings
+from openai import AsyncOpenAI
+
 from chat.dtos import ChatMessage
+from chat.utilities.log_safety import redact
 from chat.utilities.rags.rag_engine import RAGEngine
 from chat.utilities.tools import calculate, web_search  # 🔥 NEW: Import both tools
-from chat.utilities.log_safety import redact
-import logging
-import json  # 🔥 NEW: For parsing tool arguments
-from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,7 @@ class LLMService:
                 # The API key comes from .env (sk-... for OpenAI, sk-or-v1-... for OpenRouter)
                 api_key=settings.OPENAI_API_KEY,
                 # Allow overriding the base URL for OpenRouter or other OpenAI-compatible APIs
-                base_url=getattr(settings, "OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+                base_url=getattr(settings, "OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
             ),
             # The cloud model name (e.g., meta-llama/llama-3.3-70b-instruct:free)
             settings.OPENAI_MODEL,
@@ -117,8 +119,9 @@ class LLMService:
             logger.error(f"Query rewrite failed: {e}")
             return user_message  # Fallback to original if it fails
 
-    def _build_messages(self, user_message: str, history: list[ChatMessage], docs: list[dict], memories: list[dict]) -> \
-            list[dict]:
+    def _build_messages(
+        self, user_message: str, history: list[ChatMessage], docs: list[dict], memories: list[dict]
+    ) -> list[dict]:
         """
         Private method to build the payload for the LLM.
         It combines the System Prompt, the RAG context, the last 10 turns of history, and the new user message.
@@ -163,7 +166,7 @@ class LLMService:
         return messages
 
     async def generate_reply(
-            self, user_message: str, history: list[ChatMessage], session_id: str, use_fast: bool = False
+        self, user_message: str, history: list[ChatMessage], session_id: str, use_fast: bool = False
     ) -> str:
         """
         Public method: Generates a complete, non-streaming reply from the LLM.
@@ -191,7 +194,7 @@ class LLMService:
         return reply_text
 
     async def stream_reply(
-            self, user_message: str, history: list[ChatMessage], session_id: str, use_fast: bool = False
+        self, user_message: str, history: list[ChatMessage], session_id: str, use_fast: bool = False
     ):
         """
         Public method: Asynchronous Generator that yields token-by-token responses.
@@ -217,7 +220,9 @@ class LLMService:
             docs = self.rag_engine.retrieve_documents(search_query, session_id, top_k=3)
             memories = self.rag_engine.retrieve_memories(search_query, session_id, top_k=3)
 
-            logger.info(f"🔍 [RAG] Found {len(docs)} docs and {len(memories)} memories for query: {redact(search_query)}")
+            logger.info(
+                f"🔍 [RAG] Found {len(docs)} docs and {len(memories)} memories for query: {redact(search_query)}"
+            )
 
             # 2. Build Messages (use the original user_message here so the LLM answers naturally)
             messages = self._build_messages(user_message, history, docs, memories)
@@ -238,12 +243,12 @@ class LLMService:
                             "properties": {
                                 "expression": {
                                     "type": "string",
-                                    "description": "The math expression to evaluate, e.g., '2+2' or '1234 * 5678'"
+                                    "description": "The math expression to evaluate, e.g., '2+2' or '1234 * 5678'",
                                 }
                             },
-                            "required": ["expression"]
-                        }
-                    }
+                            "required": ["expression"],
+                        },
+                    },
                 },
                 # 🔥 NEW: Web Search Tool Schema
                 {
@@ -256,13 +261,13 @@ class LLMService:
                             "properties": {
                                 "query": {
                                     "type": "string",
-                                    "description": "The search query, e.g., 'Weather in Delhi today'"
+                                    "description": "The search query, e.g., 'Weather in Delhi today'",
                                 }
                             },
-                            "required": ["query"]
-                        }
-                    }
-                }
+                            "required": ["query"],
+                        },
+                    },
+                },
             ]
 
             # 5. Call LLM (with tools)
@@ -321,12 +326,9 @@ class LLMService:
                         result = calculate(expression)
 
                         # 3. Append the tool result to history
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc["id"],
-                            "name": "calculate",
-                            "content": result
-                        })
+                        messages.append(
+                            {"role": "tool", "tool_call_id": tc["id"], "name": "calculate", "content": result}
+                        )
                     # 🔥 NEW: Handle Web Search
                     elif tc["function"]["name"] == "web_search":
                         args = json.loads(tc["function"]["arguments"])
@@ -334,12 +336,9 @@ class LLMService:
                         logger.info(f"🌐 Searching Web: {redact(query)}")
                         result = web_search(query)
 
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc["id"],
-                            "name": "web_search",
-                            "content": result
-                        })
+                        messages.append(
+                            {"role": "tool", "tool_call_id": tc["id"], "name": "web_search", "content": result}
+                        )
 
                 # 4. Call the LLM again to get the final answer (non-streaming for simplicity)
                 logger.info("🔄 Calling LLM again with tool results...")

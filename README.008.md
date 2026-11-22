@@ -1,6 +1,6 @@
 # Branch 008: `genai-chat-008-agent-tools` 🚀
 
-**Goal:** 
+**Goal:**
 Transform the chatbot into an autonomous AI Agent by implementing Function Calling (Tool Calling). The AI will be able to decide on its own when to use external tools (like a Calculator or Web Search) instead of hallucinating answers.
 
 ---
@@ -305,9 +305,10 @@ OPERATORS = {
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
     ast.Div: operator.truediv,
-    ast.Pow: operator.pow,   # handles ** (power)
+    ast.Pow: operator.pow,  # handles ** (power)
     ast.USub: operator.neg,
 }
+
 
 def calculate(expression: str) -> str:
     """Safely evaluate a mathematical expression."""
@@ -317,7 +318,7 @@ def calculate(expression: str) -> str:
         node = ast.parse(expression, mode="eval").body
 
         def _eval(node):
-            if isinstance(node, ast.Constant):      # ast.Num no longer exists
+            if isinstance(node, ast.Constant):  # ast.Num no longer exists
                 return node.value
             elif isinstance(node, ast.BinOp):
                 return OPERATORS[type(node.op)](_eval(node.left), _eval(node.right))

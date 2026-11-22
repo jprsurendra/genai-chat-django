@@ -1,13 +1,13 @@
 import hashlib
+import json  # 🔥 NEW: For storing JSON in Redis
 import logging
 import os
 import re
 import uuid
-import json  # 🔥 NEW: For storing JSON in Redis
-import redis  # 🔥 NEW: For caching
 
 import chromadb
 import numpy as np
+import redis  # 🔥 NEW: For caching
 from chromadb.utils import embedding_functions
 from django.conf import settings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -34,6 +34,7 @@ class RAGEngine:
     RAG Engine to handle text embedding, retrieval, and document processing.
     Uses two separate ChromaDB collections: one for documents, one for chat memory.
     """
+
     DOCS_COLLECTION = "documents_v2"
     MEMORY_COLLECTION = "chat_memory_v2"
     DEMO_COLLECTION = "manual_knowledge_base"  # Used only for debugging/learning
@@ -64,7 +65,7 @@ class RAGEngine:
                 port=getattr(settings, "REDIS_PORT", 6379),
                 db=getattr(settings, "REDIS_DB", 0),
                 decode_responses=True,
-                socket_timeout=1.0
+                socket_timeout=1.0,
             )
         except Exception as e:
             logger.error(f"Redis connection failed for caching: {e}")
@@ -91,7 +92,7 @@ class RAGEngine:
         """
         # 🔥 FIX (H1): Match words in both English and Hindi (Devanagari block)
         # \w+ in Python misses Hindi vowel signs, so we explicitly include the Devanagari unicode range
-        words = re.findall(r'[\w\u0900-\u097F]+', text.lower())
+        words = re.findall(r"[\w\u0900-\u097F]+", text.lower())
         return [w for w in words if len(w) > 2]
 
     def _query(self, collection, query: str, session_id: str, top_k: int) -> list[dict]:
@@ -102,11 +103,7 @@ class RAGEngine:
             return []
 
         # 1. Get ALL documents for this user from ChromaDB (to build the BM25 index)
-        all_res = collection.get(
-            where={"session_id": session_id},
-            include=["documents", "metadatas"],
-            limit=1000
-        )
+        all_res = collection.get(where={"session_id": session_id}, include=["documents", "metadatas"], limit=1000)
         all_docs = all_res.get("documents", [])
         all_metas = all_res.get("metadatas", [])
 
@@ -158,13 +155,15 @@ class RAGEngine:
             # Hybrid Score (50% Vector, 50% BM25)
             hybrid_score = (0.5 * vector_score) + (0.5 * normalized_bm25)
 
-            combined_results.append({
-                "text": doc,
-                "filename": meta.get("filename", "Memory"),
-                "page": meta.get("page", 1),
-                "hybrid_score": hybrid_score,
-                "vector_dist": vector_dist
-            })
+            combined_results.append(
+                {
+                    "text": doc,
+                    "filename": meta.get("filename", "Memory"),
+                    "page": meta.get("page", 1),
+                    "hybrid_score": hybrid_score,
+                    "vector_dist": vector_dist,
+                }
+            )
 
         # 5. Sort by Hybrid Score
         combined_results.sort(key=lambda x: x["hybrid_score"], reverse=True)
@@ -183,11 +182,7 @@ class RAGEngine:
                 # print(f"   [DEBUG] Rejected with score {res['hybrid_score']:.4f}")
                 continue
 
-            final_results.append({
-                "text": res["text"],
-                "filename": res["filename"],
-                "page": res["page"]
-            })
+            final_results.append({"text": res["text"], "filename": res["filename"], "page": res["page"]})
 
         return final_results
 
@@ -211,7 +206,6 @@ class RAGEngine:
         filename = original_filename  # Use the original filename passed from the view
 
         text = ""
-        page_number = 1  # For TXT files
 
         if lower.endswith(".pdf"):
             reader = PdfReader(file_path)
@@ -222,7 +216,7 @@ class RAGEngine:
                 pages.append(f"[PAGE_{i + 1}]{page_text}")
             text = "\n".join(pages)
         elif lower.endswith(".txt"):
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            with open(file_path, encoding="utf-8", errors="ignore") as f:
                 text = f.read()
         else:
             return "Unsupported file format. Please upload PDF or TXT.", 0
@@ -254,13 +248,17 @@ class RAGEngine:
                 continue
 
             chunks.append(chunk)
-            metadatas.append({
-                "session_id": user_id,  # We use user_id as session_id for RAG
-                "filename": filename,
-                "page": current_page
-            })
+            metadatas.append(
+                {
+                    "session_id": user_id,  # We use user_id as session_id for RAG
+                    "filename": filename,
+                    "page": current_page,
+                }
+            )
             # Generate a unique ID based on user, filename, page, and content
-            ids.append(hashlib.sha1(f"{user_id}:{filename}:{current_page}:{chunk}".encode("utf-8")).hexdigest())
+            ids.append(
+                hashlib.sha1(f"{user_id}:{filename}:{current_page}:{chunk}".encode(), usedforsecurity=False).hexdigest()
+            )
 
         if not chunks:
             return "File is empty or could not be read.", 0
@@ -287,11 +285,7 @@ class RAGEngine:
         self.memory.add(
             documents=[f"User said: {content.strip()[:1000]}"],
             ids=[str(uuid.uuid4())],
-            metadatas=[{
-                "session_id": session_id,
-                "filename": "Chat History",
-                "page": 1
-            }],
+            metadatas=[{"session_id": session_id, "filename": "Chat History", "page": 1}],
         )
         return True
 
@@ -332,7 +326,7 @@ class RAGEngine:
             highest_similarity = 0.0
 
             # 3. Compare with all cached queries
-            for cached_query, cached_data in cached_items.items():
+            for _cached_query, cached_data in cached_items.items():
                 data = json.loads(cached_data)
                 cached_vec = data["embedding"]
 
@@ -367,10 +361,7 @@ class RAGEngine:
             ttl = getattr(settings, "CACHE_TTL", 86400)
 
             # Store as a JSON string
-            cache_data = json.dumps({
-                "embedding": query_vec_list,
-                "answer": answer
-            })
+            cache_data = json.dumps({"embedding": query_vec_list, "answer": answer})
 
             self.redis_client.hset(cache_key, query, cache_data)
             self.redis_client.expire(cache_key, ttl)
@@ -415,10 +406,7 @@ class RAGEngine:
         # Create simple IDs for the documents
         ids = [f"doc_{i}" for i in range(len(documents))]
 
-        demo_col.add(
-            documents=documents,
-            ids=ids
-        )
+        demo_col.add(documents=documents, ids=ids)
         print(f"✅ Successfully stored {len(documents)} documents in Demo Vector Store.")
 
     def retrieve_similar(self, query: str, top_k: int = 3):
@@ -431,10 +419,7 @@ class RAGEngine:
         if demo_col.count() == 0:
             return []
 
-        results = demo_col.query(
-            query_texts=[query],
-            n_results=top_k
-        )
+        results = demo_col.query(query_texts=[query], n_results=top_k)
 
         if results and results["documents"]:
             return results["documents"][0]
@@ -447,15 +432,10 @@ class RAGEngine:
         Useful for understanding how the embedding model behaves with different sentences.
         """
         if sentences is None:
-            sentences = [
-                "मुझे चाय पसंद है",
-                "I love tea",
-                "मुझे कॉफ़ी बहुत पसंद है",
-                "The weather is nice today"
-            ]
+            sentences = ["मुझे चाय पसंद है", "I love tea", "मुझे कॉफ़ी बहुत पसंद है", "The weather is nice today"]
 
         print("\n" + "=" * 60)
-        print(f"#1. Embeddings Basic Example ...")
+        print("#1. Embeddings Basic Example ...")
         print(f"   🔍 EMBEDDING SIMILARITY FOR USER INPUT: '{user_message}'")
         print("=" * 60)
 

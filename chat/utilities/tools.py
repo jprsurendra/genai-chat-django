@@ -1,7 +1,7 @@
 import ast
-import operator
 import logging
-import re
+import operator
+
 from django.conf import settings
 from tavily import TavilyClient
 
@@ -26,11 +26,15 @@ def calculate(expression: str) -> str:
     Includes a limit on exponentiation to prevent CPU/Memory DoS attacks (e.g., 9**9**9).
     """
     try:
-        expression = expression.replace('^', '**')
-        node = ast.parse(expression, mode='eval').body
+        expression = expression.replace("^", "**")
+        node = ast.parse(expression, mode="eval").body
 
         def _eval(node):
             if isinstance(node, ast.Constant):
+                # SECURITY: only real numbers. A string constant would turn "a" * 10**10 into a
+                # multi-gigabyte allocation (memory DoS) that the exponent check does not catch.
+                if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
+                    raise TypeError("Only numbers are allowed")
                 return node.value
             elif isinstance(node, ast.BinOp):
                 # 🔥 SECURITY FIX (H2): Prevent DoS via huge exponents
@@ -41,9 +45,9 @@ def calculate(expression: str) -> str:
                     if abs(right) > 10 or abs(left) > 10000:
                         raise ValueError("Exponent too large. Please use smaller numbers.")
                     return operator.pow(left, right)
-                return OPERATORS[type(node.op)](_eval(node.left), _eval(node.right))
+                return OPERATORS[type(node.op)](_eval(node.left), _eval(node.right))  # type: ignore[operator]
             elif isinstance(node, ast.UnaryOp):
-                return OPERATORS[type(node.op)](_eval(node.operand))
+                return OPERATORS[type(node.op)](_eval(node.operand))  # type: ignore[operator]
             else:
                 raise TypeError(f"Unsupported operation: {type(node)}")
 
@@ -73,11 +77,11 @@ def web_search(query: str) -> str:
 
         formatted_results = []
         for res in results:
-            content = res.get('content', '')
+            content = res.get("content", "")
             # 🔥 SECURITY FIX (H4): Check for simple prompt injection patterns
             injection_keywords = ["ignore previous instructions", "system prompt", "you are now"]
             if any(keyword in content.lower() for keyword in injection_keywords):
-                logger.warning(f"Skipped a search result due to potential prompt injection.")
+                logger.warning("Skipped a search result due to potential prompt injection.")
                 continue
 
             formatted_results.append(f"Source: {res.get('url')}\nContent: {content}")

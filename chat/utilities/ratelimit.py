@@ -1,10 +1,11 @@
+import logging
 import time
 import uuid
 
 import redis
-import logging
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
+from django.http import HttpRequest
 
 logger = logging.getLogger(__name__)
 
@@ -18,20 +19,21 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------
 
 # Initialize Redis Connection
+redis_client: redis.Redis | None
 try:
     redis_client = redis.Redis(
         host=getattr(settings, "REDIS_HOST", "localhost"),
         port=getattr(settings, "REDIS_PORT", 6379),
         db=getattr(settings, "REDIS_DB", 0),
         decode_responses=True,
-        socket_timeout=1.0  # Fail fast if Redis is down
+        socket_timeout=1.0,  # Fail fast if Redis is down
     )
 except Exception as e:
     logger.error(f"Redis connection failed: {e}")
     redis_client = None
 
 
-def check_rate_limit(ip: str, scope: str = "chat", limit: int = None) -> None:
+def check_rate_limit(ip: str, scope: str = "chat", limit: int | None = None) -> None:
     """
     A thread-safe, Redis-backed sliding-window rate limiter.
 
@@ -89,10 +91,10 @@ def check_rate_limit(ip: str, scope: str = "chat", limit: int = None) -> None:
     except redis.RedisError as e:
         # If Redis fails during execution, block the request (Fail-Closed)
         logger.error(f"Redis rate limit error: {e}")
-        raise PermissionDenied("Service temporarily unavailable. Please try again later.")
+        raise PermissionDenied("Service temporarily unavailable. Please try again later.") from e
 
 
-def get_client_ip(request) -> str:
+def get_client_ip(request: HttpRequest) -> str:
     """
     Returns the client IP used for per-IP rate limits (login, register, token refresh).
 

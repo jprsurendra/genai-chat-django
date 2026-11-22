@@ -2,11 +2,14 @@
 Django settings for config project.
 Default settings only. Custom settings are in local_settings.py
 """
-from datetime import timedelta
-from pathlib import Path
+
 import os
 import sys
 import warnings
+from datetime import timedelta
+from pathlib import Path
+
+from django.utils.csp import CSP
 from dotenv import load_dotenv
 
 # Load environment variables at the very beginning
@@ -27,7 +30,7 @@ try:
 except ImportError:
     # local_settings.py is git-ignored. Fall back to the committed example so a fresh
     # clone (or CI) can start; all secrets still come from environment variables.
-    warnings.warn("local_settings.py not found; using local_settings_example.py")
+    warnings.warn("local_settings.py not found; using local_settings_example.py", stacklevel=1)
     from local_settings_example import *
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -51,8 +54,8 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",  # refresh-token rotation + logout
     "accounts",  # Auth API
-    "chat",      # Chat & RAG API
-    "web_ui",    # Frontend UI (New)
+    "chat",  # Chat & RAG API
+    "web_ui",  # Frontend UI (New)
 ]
 
 # MIDDLEWARE = [
@@ -64,16 +67,17 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",     # <-- required
+    "django.contrib.sessions.middleware.SessionMiddleware",  # <-- required
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",  # <-- required
-    "django.contrib.messages.middleware.MessageMiddleware",     # <-- required
+    "django.contrib.messages.middleware.MessageMiddleware",  # <-- required
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django.middleware.csp.ContentSecurityPolicyMiddleware",
 ]
 
 
-ROOT_URLCONF = 'config.urls'
+ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
     {
@@ -82,8 +86,8 @@ TEMPLATES = [
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
-                "django.template.context_processors.request",           # <--  Required
-                "django.contrib.auth.context_processors.auth",          # <--  Required
+                "django.template.context_processors.request",  # <--  Required
+                "django.contrib.auth.context_processors.auth",  # <--  Required
                 "django.contrib.messages.context_processors.messages",  # <-- Required
             ],
         },
@@ -100,7 +104,7 @@ ASGI_APPLICATION = "config.asgi.application"
 #     }
 # }
 
-STATIC_URL = 'static/'
+STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -114,8 +118,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
-    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework_simplejwt.authentication.JWTAuthentication",],
-    "DEFAULT_PERMISSION_CLASSES": [ "rest_framework.permissions.IsAuthenticated",],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
     "UNAUTHENTICATED_USER": None,
 }
 
@@ -146,6 +154,22 @@ AUTH_PASSWORD_VALIDATORS = [
 # SECURITY HEADERS (M5)
 # ==========================================
 SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Content-Security-Policy (Django built-in). Everything is served from our own origin:
+# vendor libraries live in static/vendor/, and there are no inline scripts or styles.
+# This is the main defence if an XSS bug ever slips through (the JWT is in localStorage).
+SECURE_CSP = {
+    "default-src": [CSP.SELF],
+    "script-src": [CSP.SELF],
+    "style-src": [CSP.SELF],
+    "img-src": [CSP.SELF, "data:", "blob:"],
+    "font-src": [CSP.SELF],
+    "connect-src": [CSP.SELF],
+    "object-src": [CSP.NONE],
+    "base-uri": [CSP.SELF],
+    "form-action": [CSP.SELF],
+    "frame-ancestors": [CSP.NONE],
+}
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
 
@@ -156,6 +180,8 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = os.getenv("DJANGO_SECURE_SSL_REDIRECT", "0") == "1"
     SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_SECURE_HSTS_SECONDS", "0"))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+    # Only enable after the domain is submitted to hstspreload.org (hard to undo).
+    SECURE_HSTS_PRELOAD = os.getenv("DJANGO_SECURE_HSTS_PRELOAD", "0") == "1"
     if os.getenv("TRUST_X_FORWARDED_FOR", "0") == "1":
         SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
@@ -188,14 +214,11 @@ STORAGES = {
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Media files (User uploaded files)
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 
 # ==========================================
 # LOGGING CONFIGURATION
 # ==========================================
-try:
-    from .logger_config import LOGGING
-except ImportError:
-    pass
+from .logger_config import LOGGING  # noqa: F401  (read by Django from the settings module)

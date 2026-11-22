@@ -1,0 +1,200 @@
+# Continuous Integration for GenAI Chat.
+#
+# Every push and pull request runs:
+#   lint      -> ruff (lint + format), mypy, JavaScript syntax
+#   test      -> pytest + coverage on SQLite (Python 3.13 and 3.14) and on real MySQL 8.4
+#   deploy    -> `check --deploy` and `collectstatic` with production settings
+#   security  -> gitleaks (full history), pip-audit, dependency licence policy
+#
+# Third-party actions are pinned to full commit SHAs (supply-chain safety); Dependabot keeps them current.
+
+name: CI
+
+on:
+  push:
+    branches: [main, "genai-chat-*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONUNBUFFERED: "1"
+  LLM_PROVIDER: ollama          # no API key needed; the LLM is mocked in tests
+  DJANGO_SECRET_KEY: ci-only-insecure-key-0123456789-abcdefghijklmnopqrstuvwxyz-ABCDEFG
+
+jobs:
+  lint:
+    name: Lint & type check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: System libraries for mysqlclient
+        run: sudo apt-get update -q && sudo apt-get install -y -q default-libmysqlclient-dev pkg-config
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Ruff (lint)
+        run: ruff check --output-format=github .
+      - name: Ruff (format)
+        run: ruff format --check .
+      - name: mypy
+        run: mypy .
+      - name: JavaScript syntax
+        run: for f in static/web_ui/*.js; do node --check "$f"; done
+
+  test:
+    name: Tests (Python ${{ matrix.python }}, ${{ matrix.database }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.13", "3.14"]
+        database: [sqlite]
+        include:
+          - python: "3.13"
+            database: mysql
+    services:
+      mysql:
+        # Django 6.1 requires MySQL 8.4 or later.
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-pass
+          MYSQL_DATABASE: genai_chat_db
+          MYSQL_USER: genai
+          MYSQL_PASSWORD: ci-only-pass
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-root-pass"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      TEST_DATABASE: ${{ matrix.database }}
+      DB_NAME: genai_chat_db
+      DB_USER: root               # the test runner must be able to create test_genai_chat_db
+      DB_PASSWORD: ci-root-pass
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: System libraries for mysqlclient
+        run: sudo apt-get update -q && sudo apt-get install -y -q default-libmysqlclient-dev pkg-config
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Migrations are committed
+        run: python manage.py makemigrations --check --dry-run --settings=config.settings_test
+      - name: Migrate (real database)
+        if: matrix.database == 'mysql'
+        run: python manage.py migrate --settings=config.settings_test
+      - name: pytest
+        run: pytest --cov --cov-report=term --cov-report=xml
+      - name: Upload coverage report
+        if: matrix.python == '3.13' && matrix.database == 'sqlite'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 14
+
+  deploy-check:
+    name: Production settings check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-pass
+          MYSQL_DATABASE: genai_chat_db
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-root-pass"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      DJANGO_DEBUG: "0"
+      DJANGO_ALLOWED_HOSTS: app.example.com
+      DJANGO_SECURE_SSL_REDIRECT: "1"
+      DJANGO_SECURE_HSTS_SECONDS: "31536000"
+      DJANGO_SECURE_HSTS_PRELOAD: "1"
+      DB_NAME: genai_chat_db
+      DB_USER: root
+      DB_PASSWORD: ci-root-pass
+      DB_HOST: 127.0.0.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: System libraries for mysqlclient
+        run: sudo apt-get update -q && sudo apt-get install -y -q default-libmysqlclient-dev pkg-config
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Django deploy checks
+        run: python manage.py check --deploy --fail-level WARNING
+      - name: Migrations apply on MySQL with production settings
+        run: python manage.py migrate
+      - name: collectstatic (manifest storage)
+        run: python manage.py collectstatic --noinput
+
+  security:
+    name: Security scans
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0            # scan the whole history, not only the last commit
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: gitleaks (secrets in git history)
+        run: |
+          curl -sSfL -o gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum --check
+          tar -xzf gitleaks.tgz gitleaks
+          ./gitleaks git --redact --verbose --exit-code 1 .
+      - name: pip-audit (known vulnerabilities)
+        run: |
+          pip install pip-audit==2.10.1
+          # Documented exceptions: see SECURITY.md -> "Accepted vulnerabilities".
+          # chromadb has no fixed release; it is replaced by Qdrant in Phase B (010.3).
+          pip-audit -r requirements.txt --no-deps --disable-pip --progress-spinner off \
+            --ignore-vuln PYSEC-2026-311 \
+            --ignore-vuln PYSEC-2026-3813 \
+            --ignore-vuln PYSEC-2026-3814 \
+            --ignore-vuln PYSEC-2026-3815
+      - name: Licence policy (no strong copyleft in runtime dependencies)
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q default-libmysqlclient-dev pkg-config
+          pip install -r requirements.txt pip-licenses==5.5.5
+          # mysqlclient (GPL-2.0-or-later) is an accepted exception for the hosted SaaS; see SECURITY.md.
+          pip-licenses --from=mixed --partial-match \
+            --ignore-packages mysqlclient \
+            --fail-on "GPL;AGPL;SSPL;EUPL;Commons Clause"

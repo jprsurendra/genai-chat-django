@@ -31,7 +31,7 @@ This is how the app looks today (branch `genai-chat-005-db-auth`): a signed-in u
 
 | Layer        | Choice                  | Why                                                    |
 |--------------|-------------------------|--------------------------------------------------------|
-| Backend      | Django 5.x + DRF        | Async views, native ASGI support, class-based APIViews |
+| Backend      | Django 6.1 + DRF        | Async views, native ASGI support, class-based APIViews |
 | Server       | Uvicorn                 | ASGI server required for true token streaming          |
 | LLM runtime  | Ollama                  | Local, free, no API key                                |
 | LLM client   | `openai` SDK ≥ 2.7.2    | Ollama exposes OpenAI-compatible `/v1`                 |
@@ -661,7 +661,7 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Debug and print similarity scores in the terminal for educational purposes.
 - Prepare the foundation for storing and retrieving data from a Vector Database (ChromaDB).
 
-**Changes made:** 
+**Changes made:**
 - Created `RAGEngine` in `chat/utilities/rags/rag_engine.py`.
 - Added `debug_embeddings` method to `LLMService`.
 - Hooked the debug method into `ChatAPIView`.
@@ -681,7 +681,7 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Add `RAG_MAX_DISTANCE` cutoff and fix the "AI identity" hallucination.
 - Implement "Show Sources" (displaying filename and page number).
 
-**Changes made:** 
+**Changes made:**
 - Created `local_settings.py`.
 - Updated `LLMService`, `RAGEngine`, and `ChatAPIView`.
 - Added UI badge for sources in `app.js`.
@@ -698,7 +698,7 @@ This screenshot is a perfect example of the difference between small local AI mo
 - Separate the codebase into `accounts` (Auth API), `chat` (Chat API), and `web_ui` (Frontend).
 - Save Chat History to the database.
 
-**Changes made:** 
+**Changes made:**
 - Created `accounts` and `web_ui` Django apps.
 - Updated `ChatSession` and `ChatMessage` models.
 - Replaced `X-Session-Id` with JWT Token authentication.
@@ -821,8 +821,10 @@ Copy this block for each new branch:
 
 ## 📜 License
 
-MIT — use it, fork it, ship it. No warranty.
+Proprietary. All rights reserved. See [LICENSE](LICENSE).
+Open-source components are used under their own licences: see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+Contribution rules: [CONTRIBUTING.md](CONTRIBUTING.md) · Security reports: [SECURITY.md](SECURITY.md) · Release history: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-*Last verified: Ubuntu 26.04.1 · Python 3.14.4 · Django 5.x · openai 3.x · pydantic 2.14.x · Ollama (llama3.2:1b + qwen2.5:1.5b)*
+*Last verified: Ubuntu 26.04.1 · Python 3.14.4 · Django 6.1 · MySQL 8.4+ · openai 3.x · pydantic 2.14.x · Ollama (llama3.2:1b + qwen2.5:1.5b)*

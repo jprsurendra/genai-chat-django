@@ -50,7 +50,7 @@ Since this is an educational app, here are 3 ways to make the AI smarter without
    ```
 
 2. **Try the bigger model:** Switch from `qwen2.5:1.5b` to `llama3.2:1b`. *(If you have 8GB+ RAM, try `llama3.1:8b` for mind-blowing results!)*
-3. **How to prompt small models:** Be direct. 
+3. **How to prompt small models:** Be direct.
    - ❌ **Bad:** `I am SSR, 2+2?`
    - ✅ **Good:** `Calculate 2+2.`
 
@@ -88,10 +88,7 @@ This branch was dedicated to understanding how the `SYSTEM_PROMPT` drastically c
 - **System Prompt used:**
 
   ```python
-  SYSTEM_PROMPT = (
-      "You are a helpful, concise AI assistant. "
-      "Use markdown for formatting. Use code blocks for code."
-  )
+  SYSTEM_PROMPT = "You are a helpful, concise AI assistant. Use markdown for formatting. Use code blocks for code."
   ```
 
 - **Prompt:** `I am SSR, 2+2?`

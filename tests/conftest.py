@@ -4,11 +4,16 @@ Shared fixtures for the test-suite.
 - Redis is replaced by an in-memory fakeredis instance, so rate limits work without a server.
 - The LLM service is replaced by a fake, so no Ollama / OpenAI / ChromaDB is needed.
 """
+
 import fakeredis
 import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
+
+# Fake credentials for tests only. Strong enough to pass AUTH_PASSWORD_VALIDATORS.
+TEST_PASSWORD = "S3cure-pass-123"  # allow-listed in .gitleaks.toml
+OTHER_TEST_PASSWORD = "S3cure-pass-456"  # allow-listed in .gitleaks.toml
 
 
 @pytest.fixture(autouse=True)
@@ -59,12 +64,12 @@ def fake_llm(monkeypatch):
 
 @pytest.fixture
 def user(db):
-    return User.objects.create_user(username="alice", email="alice@example.com", password="S3cure-pass-123")
+    return User.objects.create_user(username="alice", email="alice@example.com", password=TEST_PASSWORD)
 
 
 @pytest.fixture
 def other_user(db):
-    return User.objects.create_user(username="bob", email="bob@example.com", password="S3cure-pass-456")
+    return User.objects.create_user(username="bob", email="bob@example.com", password=OTHER_TEST_PASSWORD)
 
 
 def auth_client(u) -> APIClient:

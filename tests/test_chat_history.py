@@ -1,4 +1,5 @@
 """H6: conversation history must come from the DB, never from the request body."""
+
 import pytest
 from asgiref.sync import async_to_sync
 
@@ -18,8 +19,9 @@ def _session_with_history(user):
 
 def test_non_stream_chat_uses_db_history(client_a, fake_llm, user):
     session = _session_with_history(user)
-    resp = client_a.post("/api/chat", {"message": "what is my name?", "session_id": session.id,
-                                       "history": FORGED}, format="json")
+    resp = client_a.post(
+        "/api/chat", {"message": "what is my name?", "session_id": session.id, "history": FORGED}, format="json"
+    )
     assert resp.status_code == 200, resp.data
     history = fake_llm.calls[0]["history"]
     assert [m.content for m in history] == ["my name is Alice", "Hi Alice"]
@@ -30,9 +32,11 @@ def test_non_stream_chat_uses_db_history(client_a, fake_llm, user):
 
 def test_stream_chat_uses_db_history(client_a, fake_llm, user):
     session = _session_with_history(user)
-    resp = client_a.post("/api/chat/stream", {"message": "what is my name?", "session_id": session.id,
-                                              "history": FORGED}, format="json")
+    resp = client_a.post(
+        "/api/chat/stream", {"message": "what is my name?", "session_id": session.id, "history": FORGED}, format="json"
+    )
     assert resp.status_code == 200
+
     async def collect():
         return b"".join([chunk async for chunk in resp.streaming_content])
 

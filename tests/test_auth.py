@@ -1,16 +1,22 @@
 """R3 (refresh), M5 (password validation), R11 (auth rate limit), logout."""
+
 import pytest
 from rest_framework.test import APIClient
+
+from tests.conftest import TEST_PASSWORD
 
 pytestmark = pytest.mark.django_db
 
 
-def _register(client, password="S3cure-pass-123", username="carol", email="carol@example.com"):
-    return client.post("/api/auth/register", {"username": username, "email": email, "password": password,
-                                              "confirm_password": password}, format="json")
+def _register(client, password=TEST_PASSWORD, username="carol", email="carol@example.com"):
+    return client.post(
+        "/api/auth/register",
+        {"username": username, "email": email, "password": password, "confirm_password": password},
+        format="json",
+    )
 
 
-def _login(client, username="alice", password="S3cure-pass-123"):
+def _login(client, username="alice", password=TEST_PASSWORD):
     return client.post("/api/auth/login", {"username": username, "password": password}, format="json")
 
 

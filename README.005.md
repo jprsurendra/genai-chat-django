@@ -1,6 +1,6 @@
-# Branch 005: `genai-chat-005-db-auth` ✅ 
+# Branch 005: `genai-chat-005-db-auth` ✅
 
-**Goal:** 
+**Goal:**
 To transform the application from a prototype into a secure, multi-user platform. This branch introduces **MySQL** for persistent data storage, **JWT Authentication** for secure login/registration, and separates the **UI** from the **API** into distinct Django apps. It also adds chat history management (rename and delete) and permanent file storage for RAG.
 
 ---
@@ -75,14 +75,14 @@ Make sure `local_settings.py` reads these variables. It needs `import os`, and t
 import os
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('DB_NAME', 'genai_chat_db'),
-        'USER': os.getenv('DB_USER', 'genai_user'),
-        'PASSWORD': os.getenv('DB_PASSWORD', ''),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '3306'),
-        'OPTIONS': {'charset': 'utf8mb4'},
+    "default": {
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": os.getenv("DB_NAME", "genai_chat_db"),
+        "USER": os.getenv("DB_USER", "genai_user"),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", "localhost"),
+        "PORT": os.getenv("DB_PORT", "3306"),
+        "OPTIONS": {"charset": "utf8mb4"},
     }
 }
 ```

@@ -472,7 +472,7 @@ form.addEventListener("submit", async (e) => {
     }
 
     const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    contentHtml += `<div class="message-time" style="font-size: 0.75rem; margin-top: 4px; opacity: 0.7;">${timeString}</div>`;
+    contentHtml += `<div class="message-time">${timeString}</div>`;
 
     bubble.innerHTML = contentHtml;
 
@@ -561,7 +561,6 @@ fileUpload.addEventListener("change", async (e) => {
 
     const timeDiv = document.createElement("div");
     timeDiv.className = "message-time";
-    timeDiv.style.cssText = "font-size: 0.75rem; margin-top: 4px; opacity: 0.7;";
     timeDiv.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     bubble.appendChild(timeDiv);
 

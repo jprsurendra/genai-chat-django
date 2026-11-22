@@ -152,4 +152,20 @@ body.dark-mode #chatBox::-webkit-scrollbar-thumb {
 
 .message-time {
   user-select: none;
+  font-size: 0.75rem;
+  margin-top: 4px;
+  opacity: 0.7;
+}
+/* Layout (moved from inline style attributes so CSP can forbid inline styles) */
+.app-shell {
+  height: calc(100vh - 56px);
+}
+
+.app-sidebar {
+  width: 280px;
+}
+
+.app-main {
+  max-width: 860px;
+  overflow-y: auto;
 }

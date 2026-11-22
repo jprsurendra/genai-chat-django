@@ -3,11 +3,11 @@ import json
 import logging
 import os
 
+from asgiref.sync import async_to_sync, sync_to_async
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
-from django.http import StreamingHttpResponse, FileResponse
+from django.http import FileResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404
-from asgiref.sync import async_to_sync, sync_to_async
 from pydantic import ValidationError
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -16,10 +16,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from chat.dtos import ChatRequest
 from chat.dtos import ChatMessage as ChatMessageDTO
+from chat.dtos import ChatRequest
+from chat.models import ChatMessage, ChatSession, UploadedDocument
 from chat.utilities import check_rate_limit, get_llm_service
-from chat.models import ChatSession, ChatMessage, UploadedDocument
 
 logger = logging.getLogger(__name__)
 GENERIC_ERROR = "Something went wrong while processing your request."
@@ -49,8 +49,7 @@ def load_history(session) -> list[ChatMessageDTO]:
     Must be called BEFORE the new user message is saved, so it is not duplicated.
     """
     recent = list(
-        ChatMessage.objects.filter(session=session, is_deleted=False)
-        .order_by("-created_at")[:HISTORY_LOAD_LIMIT]
+        ChatMessage.objects.filter(session=session, is_deleted=False).order_by("-created_at")[:HISTORY_LOAD_LIMIT]
     )
     recent.reverse()
     return [ChatMessageDTO(role=m.role, content=m.content) for m in recent]
@@ -80,6 +79,7 @@ class ChatAPIView(APIView):
     Base View for Chat API (Non-Streaming).
     Requires a valid JWT token for access.
     """
+
     # JWT Authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -108,32 +108,14 @@ class ChatAPIView(APIView):
         except PermissionDenied as e:
             return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         except ValidationError as e:
-            return Response({"detail": json.loads(e.json(include_url=False, include_input=False))},
-                            status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            return Response(
+                {"detail": json.loads(e.json(include_url=False, include_input=False))},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # =====================================================================
-        # 🎓 EDUCATIONAL NOTES: DEBUGGING & LEARNING (Commented Out for Production)
-        # =====================================================================
-        # Previously, we called these debug methods on every request to print
-        # Embedding Similarity scores and test the manual Vector Store directly
-        # in the terminal.
-        #
-        # Why we commented them out:
-        # 1. Performance: It made 4 extra Ollama embedding calls per message, slowing down the app.
-        # 2. Pollution: It seeded demo data into the real ChromaDB collection.
-        #
-        # If you want to test these features during development, you can uncomment
-        # them or use the `python manage.py rag_demo` command.
-        # ---------------------------------------------------------------------
-        # self.llm_service.debug_embeddings(req.message)
-        # self.llm_service.test_manual_vector_store(req.message)
-        # =====================================================================
-
-
-
-        # 1. Create or get session (SECURITY FIX: Ensure it (must) belongs to the user)
+        # 1. Create or get session (must belong to the user)
         session, error = get_or_create_session(request.user, req.session_id, req.message)
         if error:
             return error
@@ -209,8 +191,10 @@ class ChatStreamAPIView(ChatAPIView):
         except PermissionDenied as e:
             return Response({"detail": str(e)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         except ValidationError as e:
-            return Response({"detail": json.loads(e.json(include_url=False, include_input=False))},
-                            status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            return Response(
+                {"detail": json.loads(e.json(include_url=False, include_input=False))},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -234,9 +218,7 @@ class ChatStreamAPIView(ChatAPIView):
                 yield f"data: {json.dumps({'session_id': session.id})}\n\n"
 
                 # 🔥 FIX (H6): Pass the DB history to the service, never a client-supplied one
-                async for delta in service.stream_reply(
-                        req.message, history_list, str(user_id), req.use_fast
-                ):
+                async for delta in service.stream_reply(req.message, history_list, str(user_id), req.use_fast):
                     full_reply += delta
                     # Note: Do NOT use .encode() here. Return a string.
                     yield f"data: {json.dumps({'delta': delta})}\n\n"
@@ -247,9 +229,7 @@ class ChatStreamAPIView(ChatAPIView):
                 if full_reply:
                     # Use sync_to_async to prevent SynchronousOnlyOperation error
                     await sync_to_async(ChatMessage.objects.create)(
-                        session=session,
-                        role="assistant",
-                        content=full_reply
+                        session=session, role="assistant", content=full_reply
                     )
 
             except Exception as e:
@@ -267,6 +247,7 @@ class ChatHistoryAPIView(APIView):
     API to fetch chat history for the logged-in user.
     Supports fetching all sessions, a specific session, or soft-deleting sessions.
     """
+
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -278,22 +259,19 @@ class ChatHistoryAPIView(APIView):
             try:
                 session = ChatSession.objects.get(id=session_id, user=request.user, is_deleted=False)
                 # Ensure messages are fetched correctly
-                messages = session.messages.filter(is_deleted=False).values('role', 'content', 'created_at')
+                messages = session.messages.filter(is_deleted=False).values("role", "content", "created_at")
 
                 # Fetch documents for this session
-                documents = session.documents.all().values('id', 'filename', 'uploaded_at')
+                documents = session.documents.all().values("id", "filename", "uploaded_at")
 
-                return Response({
-                    "id": session.id,
-                    "title": session.title,
-                    "messages": list(messages),
-                    "documents": list(documents)
-                })
+                return Response(
+                    {"id": session.id, "title": session.title, "messages": list(messages), "documents": list(documents)}
+                )
             except ChatSession.DoesNotExist:
                 return Response({"error": "Session not found"}, status=404)
 
         # Fetch all active sessions for the sidebar
-        sessions = ChatSession.objects.filter(user=request.user, is_deleted=False).order_by('-updated_at')
+        sessions = ChatSession.objects.filter(user=request.user, is_deleted=False).order_by("-updated_at")
         data = [{"id": s.id, "title": s.title, "updated_at": s.updated_at} for s in sessions]
         return Response({"sessions": data})
 
@@ -356,6 +334,7 @@ class UploadDocumentAPIView(APIView):
     """
     View to handle PDF/TXT uploads.
     """
+
     # JWT Authentication Add
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -395,11 +374,14 @@ class UploadDocumentAPIView(APIView):
         file_hash = file_sha256(uploaded_file)
         existing = UploadedDocument.objects.filter(user=request.user, file_hash=file_hash).first()
         if existing:
-            return Response({
-                "detail": f"This file is already uploaded (as '{existing.filename}').",
-                "document_id": existing.id,
-                "filename": existing.filename,
-            }, status=status.HTTP_409_CONFLICT)
+            return Response(
+                {
+                    "detail": f"This file is already uploaded (as '{existing.filename}').",
+                    "document_id": existing.id,
+                    "filename": existing.filename,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
 
         # 2. Get Session (if any)
         session_id = request.data.get("session_id")
@@ -438,12 +420,15 @@ class UploadDocumentAPIView(APIView):
         doc.chunk_count = chunk_count
         doc.save(update_fields=["chunk_count"])
 
-        return Response({
-            "message": result_message,
-            "document_id": doc.id,  # download via the authenticated /api/download/<id> endpoint
-            "filename": safe_name,
-            "chunk_count": chunk_count,
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "message": result_message,
+                "document_id": doc.id,  # download via the authenticated /api/download/<id> endpoint
+                "filename": safe_name,
+                "chunk_count": chunk_count,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class DownloadDocumentAPIView(APIView):
@@ -451,6 +436,7 @@ class DownloadDocumentAPIView(APIView):
     Secure endpoint to download a document.
     Ensures the user is the owner of the document.
     """
+
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -460,6 +446,6 @@ class DownloadDocumentAPIView(APIView):
 
         try:
             # FileResponse streams the file efficiently
-            return FileResponse(doc.file.open('rb'), as_attachment=True, filename=doc.filename)
+            return FileResponse(doc.file.open("rb"), as_attachment=True, filename=doc.filename)
         except FileNotFoundError:
             return Response({"error": "File not found on server."}, status=status.HTTP_404_NOT_FOUND)

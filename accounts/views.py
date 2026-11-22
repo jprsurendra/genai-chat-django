@@ -32,7 +32,8 @@ class RegisterView(APIView):
     """
     API to register a new user.
     """
-    authentication_classes = []
+
+    authentication_classes = ()
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -49,7 +50,7 @@ class RegisterView(APIView):
         if not username or not email or not password or not confirm_password:
             return Response(
                 {"error": "Username, email, password, and confirm password are required."},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         if len(username) > 150:
@@ -85,7 +86,8 @@ class LoginView(APIView):
     """
     API to login and receive JWT tokens.
     """
-    authentication_classes = []
+
+    authentication_classes = ()
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -102,11 +104,7 @@ class LoginView(APIView):
 
         # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
-        return Response({
-            "refresh": str(refresh),
-            "access": str(refresh.access_token),
-            "username": user.username
-        })
+        return Response({"refresh": str(refresh), "access": str(refresh.access_token), "username": user.username})
 
 
 class RateLimitedTokenRefreshView(TokenRefreshView):
@@ -115,7 +113,8 @@ class RateLimitedTokenRefreshView(TokenRefreshView):
     With ROTATE_REFRESH_TOKENS=True the response also contains a new refresh token,
     and the old one is blacklisted.
     """
-    authentication_classes = []
+
+    authentication_classes = ()
 
     def post(self, request, *args, **kwargs):
         limited = _auth_rate_limited(request, "refresh")
@@ -129,6 +128,7 @@ class LogoutView(APIView):
     Blacklists the refresh token so it cannot be used again.
     The access token stays valid until it expires (at most JWT_ACCESS_MINUTES).
     """
+
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 

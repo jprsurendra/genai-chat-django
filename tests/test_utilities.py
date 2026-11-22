@@ -1,4 +1,5 @@
 """H8 (no user text in logs) and rate limiter correctness."""
+
 import pytest
 
 from chat.utilities.log_safety import redact
@@ -20,6 +21,7 @@ def test_redact_is_stable_for_same_input(settings):
 def test_rate_limit_counts_requests_in_same_instant(monkeypatch, settings):
     """Two requests with the same timestamp must both be counted (old code collided)."""
     from django.core.exceptions import PermissionDenied
+
     monkeypatch.setattr("chat.utilities.ratelimit.time.time", lambda: 1000.0)
     check_rate_limit("u1", scope="t", limit=2)
     check_rate_limit("u1", scope="t", limit=2)
@@ -29,6 +31,7 @@ def test_rate_limit_counts_requests_in_same_instant(monkeypatch, settings):
 
 def test_rate_limit_fails_closed_without_redis(monkeypatch):
     from django.core.exceptions import PermissionDenied
+
     monkeypatch.setattr("chat.utilities.ratelimit.redis_client", None)
     with pytest.raises(PermissionDenied):
         check_rate_limit("u1")

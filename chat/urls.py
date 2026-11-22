@@ -1,17 +1,17 @@
 from django.urls import path
+
 from chat.views import (
     ChatAPIView,
+    ChatHistoryAPIView,
     ChatStreamAPIView,
+    DownloadDocumentAPIView,
     LLMHealthView,
     UploadDocumentAPIView,
-    ChatHistoryAPIView,
-    DownloadDocumentAPIView,
 )
 
 urlpatterns = [
     # Utility Endpoints
     path("health", LLMHealthView.as_view(), name="health"),
-
     # API Endpoints
     path("chat", ChatAPIView.as_view(), name="chat"),
     path("chat/stream", ChatStreamAPIView.as_view(), name="chat-stream"),

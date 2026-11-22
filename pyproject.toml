@@ -1,0 +1,80 @@
+[project]
+name = "genai-chat"
+version = "0.10.2"
+description = "Multi-tenant GenAI chat platform (Django + DRF): RAG, tools, agents"
+requires-python = ">=3.13"
+
+# ---------------------------------------------------------------------------
+# Ruff: linter + formatter (replaces flake8, isort, black, bandit-lite)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+extend-exclude = ["rag", "media", "logs", "static/vendor", "chroma_db"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # bugbear
+    "UP",       # pyupgrade
+    "S",        # bandit (security)
+    "DJ",       # django
+    "C4",       # comprehensions
+    "SIM",      # simplify
+]
+ignore = [
+    "E501",     # line length is handled by the formatter; long strings/comments are allowed
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S107"]  # asserts and fake passwords are fine in tests
+"evaluate_rag*.py" = ["S101", "E402"]          # django.setup() must run before model imports
+"*/migrations/*" = ["E501"]
+"config/settings*.py" = ["F403", "F405", "E402"]  # star import from local settings is intentional
+
+[tool.ruff.lint.isort]
+known-first-party = ["accounts", "chat", "config", "web_ui"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------------------
+# mypy: adopted gradually. Modules listed in [[tool.mypy.overrides]] with
+# strict settings must stay clean; the rest is checked leniently.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+exclude = ["rag/", "migrations/", "tests/", "static/"]
+
+[[tool.mypy.overrides]]
+module = ["chat.utilities.log_safety", "chat.utilities.ratelimit", "chat.dtos.*"]
+disallow_untyped_defs = true
+
+# ---------------------------------------------------------------------------
+# Coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["accounts", "chat", "config", "web_ui"]
+omit = ["*/migrations/*", "config/settings_test.py", "*/tests.py"]
+
+[tool.coverage.report]
+fail_under = 55   # ratchet: raise this as coverage grows, never lower it
+show_missing = true
+skip_empty = true
+
+# Settings modules star-import local_settings(.py|_example.py), whose types differ per machine.
+[[tool.mypy.overrides]]
+module = ["config.settings", "config.settings_test"]
+ignore_errors = true
+
+# Ratchet: these modules are rewritten in later branches (tool loop in 011, RAG in 013).
+# Remove an entry as soon as its module is clean. Never add new entries.
+[[tool.mypy.overrides]]
+module = ["chat.utilities.llms.llm", "chat.utilities.rags.rag_engine", "evaluate_rag"]
+ignore_errors = true

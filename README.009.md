@@ -1,6 +1,6 @@
 # Branch 009: `genai-chat-009-production-ui` ✅
 
-**Goal:** 
+**Goal:**
 To prepare the application for real-world users by improving the User Interface (UI) and User Experience (UX), and by fixing the most critical problems found in a production architecture review. This branch also introduces production-level features like Redis caching and background processing.
 
 ---
@@ -158,7 +158,7 @@ An LLM call is slow and costs money (or free-tier quota). If a user asks somethi
 Settings in `local_settings.py`:
 
 ```python
-CACHE_TTL = int(os.getenv("CACHE_TTL", "86400"))                       # 24 hours
+CACHE_TTL = int(os.getenv("CACHE_TTL", "86400"))  # 24 hours
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.95"))
 ```
 
@@ -177,7 +177,7 @@ The first test showed this in the log:
 
 ```python
 query_vec = self._get_query_embedding(query)
-query_vec_list = [float(x) for x in query_vec]   # numpy array -> plain Python list
+query_vec_list = [float(x) for x in query_vec]  # numpy array -> plain Python list
 cache_data = json.dumps({"embedding": query_vec_list, "answer": answer})
 ```
 

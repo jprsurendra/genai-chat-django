@@ -18,20 +18,23 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "")
 
 if not SECRET_KEY:
     if DEBUG:
-        SECRET_KEY = "dev-only-insecure-key"
+        SECRET_KEY = "dev-only-insecure-key"  # noqa: S105  (DEBUG only; production must set DJANGO_SECRET_KEY)
     else:
         raise RuntimeError("❌ DJANGO_SECRET_KEY is not set")
 
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('DB_NAME', 'genai_chat_db'),
-        'USER': os.getenv('DB_USER', 'genai_user'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'your_password_here'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '3306'),
+    "default": {
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": os.getenv("DB_NAME", "genai_chat_db"),
+        "USER": os.getenv("DB_USER", "genai_user"),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", "localhost"),
+        "PORT": os.getenv("DB_PORT", "3306"),
+        "OPTIONS": {"charset": "utf8mb4"},  # full Unicode (Hindi, emoji)
+        "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
+        "CONN_HEALTH_CHECKS": True,
     }
 }
 
@@ -44,7 +47,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 OLLAMA_MODEL_FAST = os.getenv("OLLAMA_MODEL_FAST", "qwen2.5:1.5b")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL") or None  # empty means the provider default
 
 SYSTEM_PROMPT = (
     "You are a helpful AI assistant named 'GenAI'. "
@@ -94,5 +97,5 @@ REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
 # Redis Cache Configuration
-CACHE_TTL = int(os.getenv("CACHE_TTL", "86400")) # 24 hours
-SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.95")) # 95% match
+CACHE_TTL = int(os.getenv("CACHE_TTL", "86400"))  # 24 hours
+SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.95"))  # 95% match

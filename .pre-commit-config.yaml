@@ -1,0 +1,42 @@
+# Runs the fast CI checks on every commit, before code leaves the developer's machine.
+#   pip install -r requirements-dev.txt
+#   pre-commit install            # once per clone
+#   pre-commit run --all-files    # run everything manually
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+        exclude: ^static/vendor/
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+        exclude: ^static/vendor/
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]   # two trailing spaces are a line break in Markdown
+        exclude: ^static/vendor/
+      - id: detect-private-key
+      - id: forbid-new-submodules
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.6
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: django-migrations-committed
+        name: Django migrations are committed
+        entry: python manage.py makemigrations --check --dry-run --settings=config.settings_test
+        language: system
+        pass_filenames: false
+        files: (models\.py|migrations/.*\.py)$

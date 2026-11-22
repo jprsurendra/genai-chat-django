@@ -1,38 +1,75 @@
-# Django Config
-DJANGO_DEBUG=1
-DJANGO_SECRET_KEY=dev-only-insecure-key
+# =============================================================================
+# GenAI Chat: environment variables
+# Copy this file to `.env` in the project root and fill in the values.
+# `.env` is git-ignored. NEVER commit real keys or passwords.
+# Every variable the code reads is listed here; the value shown is the default.
+# =============================================================================
 
-# LLM Config
+# ---- Django -----------------------------------------------------------------
+DJANGO_DEBUG=1                              # 0 in production
+DJANGO_SECRET_KEY=                          # required when DJANGO_DEBUG=0 (50+ random chars)
+DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost    # comma-separated
+
+# Production only (used when DJANGO_DEBUG=0, behind HTTPS)
+DJANGO_SECURE_SSL_REDIRECT=0                # 1 = redirect HTTP to HTTPS
+DJANGO_SECURE_HSTS_SECONDS=0                # e.g. 31536000 (1 year) once HTTPS is stable
+DJANGO_SECURE_HSTS_PRELOAD=0                # 1 only after submitting to hstspreload.org
+TRUST_X_FORWARDED_FOR=0                     # 1 only behind your own reverse proxy (Nginx)
+
+# ---- LLM provider -----------------------------------------------------------
+# Option A: local Ollama (default, free)
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434/v1
 OLLAMA_MODEL=llama3.2:1b
 OLLAMA_MODEL_FAST=qwen2.5:1.5b
+
+# Option B: OpenAI-compatible cloud API (OpenAI, OpenRouter, ...)
+# LLM_PROVIDER=openai
+# OPENAI_API_KEY=sk-...                     # required when LLM_PROVIDER=openai
+# OPENAI_BASE_URL=https://openrouter.ai/api/v1   # leave empty for OpenAI itself
+# OPENAI_MODEL=gpt-4o-mini
 OPENAI_API_KEY=
+OPENAI_BASE_URL=
 OPENAI_MODEL=gpt-4o-mini
 
-# RAG Config
+# ---- Tools ------------------------------------------------------------------
+TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxx   # web search tool (https://tavily.com)
+
+# ---- RAG / embeddings -------------------------------------------------------
 OLLAMA_EMBED_URL=http://localhost:11434/api/embeddings
 EMBED_MODEL=nomic-embed-text
 RAG_MAX_DISTANCE=0.55
+RAG_MAX_UPLOAD_BYTES=10485760               # 10 MB
 
-# Rate Limiting
-CHAT_RATE_LIMIT=20
+# ---- Semantic cache ---------------------------------------------------------
+CACHE_TTL=86400                             # seconds (24 hours)
+SIMILARITY_THRESHOLD=0.95
+
+# ---- Redis (rate limiting + cache) -------------------------------------------
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+
+# ---- Rate limits (requests per window) ---------------------------------------
 RATE_WINDOW_SECONDS=60
-UPLOAD_RATE_LIMIT=5
+CHAT_RATE_LIMIT=20                          # per user
+UPLOAD_RATE_LIMIT=5                         # per user
+AUTH_RATE_LIMIT=10                          # per client IP: login, register, token refresh
 
+# ---- Authentication (JWT) ----------------------------------------------------
+JWT_ACCESS_MINUTES=30
+JWT_REFRESH_DAYS=7
 
-# Database information
+# ---- Database (MySQL 8.4 or later; Django 6.1 requires 8.4+) -------------------
 DB_NAME=genai_chat_db
 DB_USER=genai_user
-DB_PASSWORD=your_password_here
+DB_PASSWORD=                                # required
 DB_HOST=localhost
 DB_PORT=3306
+DB_CONN_MAX_AGE=60                          # seconds to keep DB connections open
 
+# ---- Logging -----------------------------------------------------------------
+LOG_USER_CONTENT=0                          # 1 = log real user text (only works with DJANGO_DEBUG=1)
 
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxx
-OPENAI_BASE_URL=https://openrouter.ai/api/v1
-#OPENAI_MODEL=meta-llama/llama-3.3-70b-instruct:free # 'This model is unavailable for free. The paid version is available now - use this slug instead: meta-llama/llama-3.3-70b-instruct
-OPENAI_MODEL=openrouter/free
-
-TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxx
+# ---- Tests only --------------------------------------------------------------
+# TEST_DATABASE=mysql                       # run pytest on MySQL instead of in-memory SQLite

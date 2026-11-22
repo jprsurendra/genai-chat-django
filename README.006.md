@@ -1,6 +1,6 @@
 # Branch 006: `genai-chat-006-rag-quality` ✅
 
-**Goal:** 
+**Goal:**
 To improve the accuracy and reliability of the RAG (Retrieval-Augmented Generation) system. This branch focused on moving beyond basic Vector Search by implementing **Hybrid Search (BM25 + Vector)**, **Query Rewriting**, and a proper **Evaluation Framework**.
 
 ---
@@ -11,7 +11,7 @@ In Branch 005, the chatbot had a basic RAG setup using only Vector Search (Cosin
 
 1. **The "2+2" Problem (Negative Test Failure):**
    When asked a question not present in the PDF (like "2+2"), the AI still returned random document chunks because Vector Search only looks at "meaning", not exact keywords.
-   
+
 2. **The "Follow-up" Problem (Pronoun Confusion):**
    If a user asked *"Who is the PM of UK?"* and then followed up with *"How old is he?"*, the RAG engine would search for the word "he" and fail to find the correct context.
 

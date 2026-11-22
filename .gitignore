@@ -79,3 +79,11 @@ logs/
 
 # Release archives
 dist-release/
+
+# Tool caches and reports
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

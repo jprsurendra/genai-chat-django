@@ -1,0 +1,11 @@
+# gitleaks configuration: the default rule set, plus one narrow allowlist.
+# Used automatically by CI (`gitleaks git`) and by the pre-commit hook.
+[extend]
+useDefault = true
+
+[[allowlists]]
+# Only this exact fake value (tests/conftest.py) is ignored, wherever it appears.
+# Do NOT allowlist paths: a real secret pasted into tests/ must still be caught.
+description = "Fake test-suite passwords"
+regexTarget = "secret"
+regexes = ['''^S3cure-pass-\d{3}$''']

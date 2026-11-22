@@ -22,8 +22,11 @@ _Last updated: 2026-11-19, after the code review of branch `010-devops` (see "Re
 | `008-agent-tools` | Function calling: calculator + web search (Tavily), OpenRouter support | ✅ Done (single tool round; see H5) |
 | `009-production-ui` | Production UI, dark mode, semantic cache (Redis), review fixes H1/H2/H3/H6/H9 | ✅ Done |
 | `010-devops` | Critical bug fixes, first tests | ✅ Fixes done (keys still to rotate by hand) |
-| `010.1-docker-celery` | Docker Compose, Celery worker for PDF ingestion | ⏳ Planned (separate branch, later) |
-| `011-tool-registry` | Tool registry, multi-round tool loop, streamed tool answers | ⏭️ Next up |
+| `010.1-docker-celery` | Docker Compose, Celery worker for PDF ingestion (name may change) | ⏸️ On hold until Phases A–D are done |
+| `010.2-ci-quality` | **Phase A:** CI (GitHub Actions), ruff/mypy/pre-commit, gitleaks, pip-audit, licence policy, self-hosted frontend + CSP, LICENSE / SECURITY / CONTRIBUTING / CHANGELOG | ✅ Done |
+| `010.3-architecture` | **Phase B:** layered modules, **multi-tenancy** (Organization, Membership, Roles), `LLMGateway` + `VectorStore` ports, **ChromaDB → Qdrant**, typed settings, RFC 9457 errors, `/api/v1`, health checks, JSON logs + request ID; **Phase C** architecture docs (arc42, C4, ADRs, OpenAPI) | ⏭️ Next up |
+| `010.4-security-data` | **Phase D:** RBAC enforcement, admin hardening, upload limits, threat model (OWASP LLM Top 10), retention + erasure (DPDP), backup/restore, reconciliation job | ⏳ Upcoming |
+| `011-tool-registry` | Tool registry, multi-round tool loop, streamed tool answers | ⏳ After Phase D |
 | `012-mcp-client` | Connect external MCP servers (web search, read-only DB, drive) | ⏳ Upcoming |
 | `013-multi-agent` | Supervisor + specialist agents, critic, memory agent, token budget | ⏳ Upcoming |
 | `014-mcp-server` | Expose our RAG as an MCP server (Claude Desktop, IDEs) | ⏳ Upcoming |
@@ -31,6 +34,8 @@ _Last updated: 2026-11-19, after the code review of branch `010-devops` (see "Re
 | `016-model-learning` | Model learning lifecycle: pre-training (learn), fine-tuning / adaptation, alignment (SFT, LoRA, DPO) | ⏳ Upcoming |
 | `017-voice-ui` | Voice, vision, Hindi UI | 💭 Future (optional) |
 
+> **Product decisions (2026-11-22):** GenAI Chat will be sold as a **multi-tenant SaaS**; the vector store moves to **Qdrant**; CI runs on **GitHub Actions**. Before new features (011+), the foundation is completed in the order **A → B → C → D** (branches 010.2–010.4) so that the product is deployable, auditable and sellable.
+>
 > **Renumbering note:** the old plan had `009-production` and `010-voice-ui`. Production work was split between `009-production-ui`, `010-devops` and `010.1-docker-celery`; model learning is `016`, and voice/vision moves to `017`.
 
 ---
@@ -39,7 +44,9 @@ _Last updated: 2026-11-19, after the code review of branch `010-devops` (see "Re
 
 The app has login, chat history in MySQL, document upload, a hybrid RAG engine (vector + BM25, Hindi-aware tokenizer), query rewriting, a Redis rate limiter that fails closed, a Redis semantic cache, and two tools (calculator and Tavily web search).
 
-**Current task:** Branch 010. The bug fixes (R2–R5, R11–R15, H6, H8, M4, M5) are done and covered by a `pytest` suite. Docker Compose and Celery move to a separate branch, `010.1-docker-celery`, to be done later. (The review had found that `README.010.md` described a Dockerfile, Compose file, Celery worker and tests that were not in the code.) The only open 010 item is **rotating the API keys** (R1), which must be done by hand.
+**Current task:** Phase B, `010.3-architecture` (Phase A, `010.2-ci-quality`, is done: see [README.010.2.md](README.010.2.md)).
+
+**Earlier:** Branch 010. The bug fixes (R2–R5, R11–R15, H6, H8, M4, M5) are done and covered by a `pytest` suite. Docker Compose and Celery move to a separate branch, `010.1-docker-celery`, to be done later. (The review had found that `README.010.md` described a Dockerfile, Compose file, Celery worker and tests that were not in the code.) The only open 010 item is **rotating the API keys** (R1), which must be done by hand.
 
 After Branch 010, the work moves from "chatbot with tools" to **agents**: a proper tool registry (011), MCP (012), multi-agent orchestration (013), our own MCP server (014), and measurement (015).
 
@@ -65,7 +72,7 @@ IDs H1 to M6 come from the Production Architecture Review in `README.009.md`. ID
 | M3 | Medium | BM25 rebuilt per query; >1000 chunks silently ignored | ⏳ 013 |
 | M4 | Medium | `chunk_count` always about 1 | ✅ Fixed (010) |
 | M5 | Medium | `SIMPLE_JWT`, `SECURE_*` headers, password validators | ✅ Fixed (010) |
-| M6 | Medium | No Docker, CI or tests | 🟡 010: pytest suite added (27 tests); Docker + Celery → 010.1; CI evals in 015 |
+| M6 | Medium | No Docker, CI or tests | 🟡 010: pytest suite; 010.2: full CI pipeline (51 tests, MySQL 8.4 job); Docker + Celery → 010.1; CI evals in 015 |
 | R1 | Critical | Real API keys inside the shared `.env` in the project zip | 🟡 010: `scripts/make_release_zip.sh` added; **keys must still be rotated by hand** |
 | R2 | High | `DownloadDocumentAPIView` has no URL route, so downloads return 404 | ✅ Fixed (010) |
 | R3 | High | No JWT refresh in the frontend; users are logged out when the access token expires | ✅ Fixed (010: refresh + rotation + blacklist, logout endpoint) |
@@ -81,6 +88,18 @@ IDs H1 to M6 come from the Production Architecture Review in `README.009.md`. ID
 | R13 | High | `chat/migrations/0001_initial.py` was never committed, so a fresh clone has no chat tables | ✅ Fixed (010: commit the migration) |
 | R14 | High | `media/` (user uploads) was not in `.gitignore` | ✅ Fixed (010) |
 | R15 | Medium | Failed or empty uploads left the file on disk; upload UI linked to the non-public `/media/` URL | ✅ Fixed (010) |
+| R16 | High | Calculator accepted string constants: `"a" * 10**10` exhausted memory | ✅ Fixed (010.2) |
+| R17 | High | `pypdf` 6.21.3: three CVEs (infinite loop / memory) on crafted PDFs | ✅ Fixed (010.2: 6.21.4) |
+| R18 | High | Django 6.1 needs MySQL **8.4+**; MySQL 8.0 is refused | 🟡 CI tests on 8.4; **check production MySQL version** |
+| R19 | High | README declared the code **MIT** (anyone may resell it) | ✅ 010.2: proprietary `LICENSE`; make the repo private |
+| R20 | Medium | `mysqlclient` is GPL-2.0-or-later | 🟡 Accepted for SaaS (SECURITY.md); switch to PyMySQL before any on-prem edition |
+| R21 | Medium | `chromadb` has unfixed vulnerabilities incl. tenant isolation | 🟡 Accepted until 010.3 (Qdrant) |
+| R22 | Medium | Frontend loaded from CDNs, `marked` unpinned, no CSP | ✅ Fixed (010.2: `static/vendor/` + `SECURE_CSP`) |
+| R23 | Low | Dead UI code (`chat_ui_views.py`, `templates/chat/index.html`); hardcoded credentials in root `test_ratelimit.py` | ✅ Fixed (010.2) |
+| R24 | High | Embedded ChromaDB (`PersistentClient`) prevents more than one app process/server | ⏳ 010.3 (Qdrant service + `VectorStore` port) |
+| R25 | Medium | No tenant model: data is isolated per user only; a SaaS needs organizations, memberships and roles | ⏳ 010.3 |
+| R26 | Medium | Inconsistent error format (`error` vs `detail`), no API versioning, no OpenAPI | ⏳ 010.3 |
+| R27 | Medium | `/api/health` checks no dependencies and exposes the model name; no readiness probe | ⏳ 010.3 |
 
 ---
 
@@ -132,7 +151,60 @@ IDs H1 to M6 come from the Production Architecture Review in `README.009.md`. ID
 
 ---
 
-## ⏭️ Branch 011: `genai-chat-011-tool-registry` (next)
+## ✅ Branch 010.2: `genai-chat-010.2-ci-quality` (Phase A, done)
+
+See [README.010.2.md](README.010.2.md). CI on GitHub Actions (lint, types, tests on SQLite + MySQL 8.4,
+deploy check, gitleaks, pip-audit, licence policy), pre-commit, Dependabot, self-hosted frontend with
+a strict CSP, proprietary `LICENSE`, `THIRD_PARTY_LICENSES.md`, `SECURITY.md`, `CONTRIBUTING.md`,
+`CHANGELOG.md`. Fixed R16, R17, R19, R22, R23.
+
+---
+
+## ⏭️ Branch 010.3: `genai-chat-010.3-architecture` (Phase B + C, next)
+
+**Goal:** turn the code base into a layered, multi-tenant SaaS architecture that can scale
+horizontally, and document it the way a buyer, auditor or new team member expects.
+
+**Phase B scope (code)**
+
+- **Layered modules:** `api/` (views, DTOs, versioned routes) → `services/` (use cases) → `domain/`
+  (models, rules) → `infra/` (MySQL, Redis, Qdrant, LLM providers, storage). Dependencies only point inwards.
+- **Multi-tenancy (R25):** `Organization`, `Membership` (user ↔ organization, role), roles
+  `owner` / `admin` / `member`; every chat, document, vector and cache key is scoped by `organization_id`;
+  tenant resolved per request; tests that prove one tenant can never read another tenant's data.
+- **Ports and adapters:** `LLMGateway` (provider routing, timeouts, retries, fallback, token accounting hook)
+  and `VectorStore` (Qdrant adapter; tenant filter enforced inside the adapter).
+- **ChromaDB → Qdrant (R21, R24):** Qdrant service, payload filters, hybrid search, a one-off migration
+  command that re-indexes existing documents.
+- **Typed settings:** `pydantic-settings` `AppSettings`, validated at start-up; `local_settings.py` retired.
+- **API:** `/api/v1/` versioning, one error format (RFC 9457 Problem Details) (R26), OpenAPI via
+  `drf-spectacular` at `/api/v1/docs/`, documented SSE event contract.
+- **Operations basics:** `/healthz` (liveness) and `/readyz` (MySQL, Redis, Qdrant, LLM) (R27);
+  JSON structured logs with request ID (`X-Request-ID`); Redis as Django `CACHES` backend.
+
+**Phase C scope (docs, in the same branch)**
+
+- `docs/architecture/`: arc42 Solution Architecture Document, C4 context / container / component
+  diagrams and sequence diagrams (chat stream, upload, login + refresh, tenant resolution) in Mermaid.
+- `docs/adr/`: ADRs for every decision so far (vector store, hybrid search, rate limiter fail-closed,
+  JWT storage, DB-only history, tenancy model, LLM provider strategy, semantic cache, layered architecture).
+- `docs/api/`: OpenAPI, SSE contract, error model; `docs/data/`: ER diagram, data dictionary, vector schema.
+- Move `README.0NN.md` files to `docs/releases/` and the guides to `docs/guides/`; fix stale guides.
+
+---
+
+## ⏳ Branch 010.4: `genai-chat-010.4-security-data` (Phase D)
+
+- RBAC enforcement on every endpoint (organization roles), Django admin hardening (path, IP allowlist, 2FA).
+- Upload limits (pages, chunks, content-type sniffing), optional malware scan.
+- Threat model (STRIDE + OWASP Top 10 for LLM Applications), data classification and PII inventory.
+- DPDP Act 2023 privacy note, consent records, retention jobs and complete erasure across MySQL,
+  Qdrant, file storage and Redis.
+- Backup and restore runbook with a tested restore; reconciliation job for orphaned documents/vectors.
+
+---
+
+## ⏳ Branch 011: `genai-chat-011-tool-registry`
 
 **Goal:** replace the single-round, `if/elif` tool code with an extensible registry. This is the base for MCP and agents.
 
@@ -407,7 +479,7 @@ This project is meant to teach GenAI engineering, not only to ship features. Eac
 
 ## 💡 Suggested next step
 
-Rotate the API keys (R1) and verify the 010 fixes on MySQL. Then build the tool registry (011): MCP and agents both sit on top of it. Start collecting clean, consented feedback data early (015), because it becomes the training and preference data for model learning (016). Keep local Ollama as the default, but use a tool-capable model (7–8B or cloud) from Branch 013 onwards. Keep growing the evaluation set as you go, so RAG quality does not quietly get worse while the app gains new features.
+Rotate the API keys (R1), confirm production runs MySQL 8.4+ (R18), make the repository private (R19), and fill in the placeholders in `LICENSE` / `SECURITY.md`. Then do Phase B + C (010.3) and Phase D (010.4) before new features. After that, build the tool registry (011): MCP and agents both sit on top of it. Start collecting clean, consented feedback data early (015), because it becomes the training and preference data for model learning (016). Keep local Ollama as the default, but use a tool-capable model (7–8B or cloud) from Branch 013 onwards. Keep growing the evaluation set as you go, so RAG quality does not quietly get worse while the app gains new features.
 
 ---
 
@@ -427,6 +499,21 @@ Code review में पता चला कि `README.010.md` में ल�
 - **H8:** logs में user का text लिखा जाता है।
 - **M4:** `chunk_count` गलत आता है।
 - **R5:** एक ही file बार-बार upload हो जाती है।
+
+**फैसले (2026-11-22):** GenAI Chat **multi-tenant SaaS** के रूप में बिकेगा, vector store **Qdrant** होगा और CI **GitHub Actions** पर चलेगा। नए features (011+) से पहले foundation पूरा होगा, क्रम **A → B → C → D**। `010.1-docker-celery` अभी hold पर है।
+
+**Branch 010.2: CI और Quality (Phase A, ✅ पूरा)**
+GitHub Actions CI बना, जिसमें lint, types, SQLite और MySQL 8.4 पर tests, deploy check, gitleaks, pip-audit और license policy हैं। साथ में pre-commit, Dependabot, CDN हटाकर strict CSP, proprietary `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md` और `CHANGELOG.md` जोड़े गए। Tests लिखते समय दो security bugs भी मिले और ठीक हुए: `pypdf` की CVEs और calculator का memory DoS।
+
+**Branch 010.3: Architecture + Docs (Phase B + C, अगला)**
+- Code को layers में बाँटना: api → services → domain → infra।
+- Multi-tenancy: Organization, Membership और Roles।
+- `LLMGateway` और `VectorStore` interfaces, और ChromaDB से Qdrant पर जाना।
+- Typed settings, एक standard error format, `/api/v1`, OpenAPI, health checks और JSON logs।
+- Docs: arc42, C4 diagrams और ADRs।
+
+**Branch 010.4: Security + Data (Phase D)**
+RBAC, admin hardening, upload limits, threat model, DPDP retention और erasure, backup/restore।
 
 **Branch 011: Tool Registry**
 Tools के लिए एक registry, जिसमें एक turn में कई tool rounds चल सकें (H5)। Tool के बाद का जवाब भी streaming में आएगा, और UI में "🔍 Searching…" दिखेगा।
