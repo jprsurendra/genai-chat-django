@@ -12,6 +12,38 @@ can be developed, audited and sold professionally.
 
 ---
 
+## 🎯 What we do in this branch, and why
+
+The app works, but nothing *protects* it. There are tests that nobody runs automatically, no check stops
+a secret or a vulnerable library from being merged, the frontend depends on third-party CDNs, and the
+README says the code is MIT-licensed, although it is meant to be sold. Every later phase (architecture,
+multi-tenancy, Qdrant, agents) will change a lot of code; without a safety net those changes would be
+risky. So this branch comes **first**.
+
+| # | What | Why (the problem it solves) |
+|---|---|---|
+| 1 | **CI pipeline on GitHub Actions** (lint, types, tests, deploy check, security) on every push and pull request | 27 tests existed but ran only when someone remembered. Branch 010 showed the cost: the initial migration was never committed (R13), so a fresh clone had no chat tables. CI turns such mistakes into a red build instead of a production outage. |
+| 2 | **Tests on real MySQL 8.4**, not only SQLite | SQLite hides MySQL-specific problems (collation, strictness, versions). Django 6.1 refuses MySQL older than 8.4 (R18); only a real MySQL job proves the migrations work. |
+| 3 | **ruff (lint + format + security rules), mypy, coverage floor** | One code style for everyone, bugs and insecure patterns (bandit `S` rules) caught before review, and a coverage number that can only go up. Legacy modules are handled with a "ratchet" so the build is green today and gets stricter over time. |
+| 4 | **Secret scanning (gitleaks) in CI and pre-commit** | Real API keys already leaked once through a shared zip (R1). Scanning the full history proves nothing was committed, and the hook stops it from happening in future. |
+| 5 | **Dependency vulnerability scan (pip-audit) + Dependabot** | Known CVEs arrive in libraries without anyone noticing. The first scan immediately found three in `pypdf`, the library that parses users' uploaded PDFs (R17). |
+| 6 | **Licence policy, proprietary `LICENSE`, `THIRD_PARTY_LICENSES.md`** | The README declared **MIT**, which lets anyone resell the code (R19). Buyers and investors run licence due diligence; we must know every dependency licence and block strong copyleft (GPL/AGPL) automatically. |
+| 7 | **Self-hosted frontend libraries + Content-Security-Policy** | `marked` was loaded from a CDN **without a version**: the app silently changed whenever the CDN did. CDNs are also an availability and supply-chain risk. A strict CSP is the main defence against XSS while the JWT lives in `localStorage` (R22). |
+| 8 | **Tests for the AI tools and frontend rules** | The calculator and web-search tools (security-critical: DoS, prompt injection) had 19% test coverage. Writing these tests found a new memory-DoS bug (R16). |
+| 9 | **Production settings check (`check --deploy`, `collectstatic`)** | Mis-configured production settings (HSTS, cookies, static files) are found in CI, not after the first deployment. |
+| 10 | **`SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, PR template** | A product that is sold needs a vulnerability-reporting process, a written Definition of Done, and a release history that customers and auditors can read. |
+
+**Out of scope for this branch** (each has its own branch, see [ROADMAP.md](ROADMAP.md)):
+- Docker Compose and Celery → `010.1-docker-celery` (on hold)
+- Layered architecture, multi-tenancy, Qdrant, API v1, architecture docs → `010.3-architecture`
+- RBAC, threat model, retention and backups → `010.4-security-data`
+
+**The branch is done when:** CI is green on GitHub with all four jobs, `pre-commit run --all-files`
+passes, no CDN or inline code remains in the templates, the licence and security documents exist, and
+every finding fixed here (R16, R17, R19, R22, R23) has a test or an automated check.
+
+---
+
 ## 📦 Release Notes: Branch 010.2 (2026-11-22)
 
 ### Summary
@@ -113,6 +145,24 @@ login, tabs, icons, markdown + DOMPurify, layout, **no console errors**.
 Phase A, यानी engineering की वह सुरक्षा-जाल जिस पर आगे का हर बदलाव टिका है: CI, code quality, supply-chain security और repository governance। इसके बाद product को professional तरीके से develop, audit और बेचा जा सकेगा।
 
 **फैसले:** Multi-tenant SaaS, vector store के लिए Qdrant, और CI के लिए GitHub Actions। `010.1-docker-celery` अभी hold पर है।
+
+**क्या करेंगे और क्यों:**
+App काम करता है, पर उसकी कोई सुरक्षा नहीं है। Tests हैं पर कोई उन्हें अपने आप नहीं चलाता। कोई secret या vulnerable library merge होने से रोकने वाला कोई check नहीं है। Frontend बाहरी CDNs पर टिका है। README में MIT license लिखा है, जबकि product बेचना है। आगे के phases (architecture, multi-tenancy, Qdrant, agents) बहुत सारा code बदलेंगे, और safety net के बिना यह जोखिम भरा होगा। इसलिए यह branch **सबसे पहले** है।
+
+1. **CI pipeline:** 010 में initial migration commit ही नहीं हुई थी (R13), और fresh clone पर tables नहीं बनती थीं। CI ऐसी गलती को production outage बनने से पहले red build में बदल देता है।
+2. **असली MySQL 8.4 पर tests:** SQLite, MySQL की समस्याएँ छुपा देता है, और Django 6.1 को MySQL 8.4+ चाहिए (R18)।
+3. **ruff, mypy और coverage floor:** सबके लिए एक code style, security वाली गलतियाँ review से पहले पकड़ी जाएँ, और coverage सिर्फ ऊपर जाए।
+4. **Secret scanning (gitleaks):** API keys एक बार zip के ज़रिए leak हो चुकी हैं (R1)। आगे ऐसा दोबारा न हो।
+5. **pip-audit और Dependabot:** पहले ही scan में `pypdf` की 3 CVEs मिलीं (R17), और यही library users की PDFs पढ़ती है।
+6. **License policy और proprietary LICENSE:** MIT के तहत कोई भी code बेच सकता था (R19)। Buyers की due diligence के लिए हर dependency का license पता होना चाहिए।
+7. **CDN हटाना और CSP:** `marked` बिना version के load होती थी, यानी CDN बदलते ही app का behaviour बदल जाता। JWT `localStorage` में है, इसलिए XSS के ख़िलाफ़ CSP सबसे ज़रूरी बचाव है (R22)।
+8. **AI tools के tests:** Calculator और web search का coverage 19% था। Tests लिखते ही नया memory DoS bug मिला (R16)।
+9. **Production settings check:** HSTS, cookies और static files की गलत settings deployment से पहले ही CI में पकड़ी जाएँ।
+10. **SECURITY, CONTRIBUTING, CHANGELOG:** बिकने वाले product के लिए vulnerability reporting का तरीका, Definition of Done और release history ज़रूरी हैं।
+
+**Scope से बाहर:** Docker और Celery (`010.1`), architecture और multi-tenancy (`010.3`), RBAC और backups (`010.4`)।
+
+**Branch पूरी कब मानी जाएगी:** GitHub पर CI के चारों jobs green हों, `pre-commit` pass हो, templates में कोई CDN या inline code न हो, license और security docs मौजूद हों, और यहाँ fix हुई हर finding का test या automated check हो।
 
 **CI pipeline (हर push और PR पर):**
 - **lint:** ruff, mypy और JavaScript syntax check।
